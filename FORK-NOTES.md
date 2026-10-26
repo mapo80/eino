@@ -24,4 +24,13 @@ commits. Each commit keeps the public behavior and adds its own test.
    map keys are written with the bytes sonic writes and input with invalid UTF-8 is still
    decoded by sonic; a checkpoint written before 6 reads back the same (`testdata`).
 
+8. **compose: explicit checkpoint codecs for native immutable state** —
+   `RegisterCheckpointCodec` separates the existing durable wire from an
+   in-memory clone. Immutable state shares its value during tree copies and
+   converts only when checkpoint bytes are written or loaded. Concrete nested
+   containers and typed nils restore the requested native types. Other values
+   retain the existing serializer behavior; the codec adds no wire marker.
+   Covered by named codec/container/nil tests, the serialization suite, and
+   `TestCheckPointTreeStoreIsolatedAndEqualToBytes`.
+
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
