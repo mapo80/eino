@@ -306,6 +306,14 @@ func internalMarshalMode(v any, fieldType reflect.Type, tree, skipCodec bool) (*
 
 	if !skipCodec {
 		if codec, ok := codecFor(reflect.TypeOf(v)); ok {
+			// A registered typed nil already has its historical native null
+			// representation. Its wire DTO need not be registered or allocated.
+			rv := reflect.ValueOf(v)
+			_, base := derefPointerNum(rv.Type())
+			_, registered := rm[base]
+			if !tree && rv.Kind() == reflect.Ptr && rv.IsNil() && registered {
+				return internalMarshalMode(v, fieldType, false, true)
+			}
 			if tree {
 				if codec.clone != nil {
 					cloned, err := codec.clone(v)
@@ -577,6 +585,9 @@ func internalUnmarshalMode(v *internalStruct, typ reflect.Type, tree, skipCodec 
 	}
 	if tree && v.treeType != nil {
 		typ = v.treeType
+		if typ.Kind() == reflect.Ptr && string(v.JSONValue) == "null" {
+			return reflect.Zero(typ).Interface(), nil
+		}
 	}
 	if !tree && !skipCodec {
 		native := typ
@@ -597,6 +608,9 @@ func internalUnmarshalMode(v *internalStruct, typ reflect.Type, tree, skipCodec 
 			}
 		}
 		if codec, ok := codecFor(native); ok {
+			if native.Kind() == reflect.Ptr && string(v.JSONValue) == "null" {
+				return reflect.Zero(native).Interface(), nil
+			}
 			// The outer tag identifies the native registration; the codec
 			// supplies the concrete historical field layout.
 			wireNode := *v
@@ -606,6 +620,13 @@ func internalUnmarshalMode(v *internalStruct, typ reflect.Type, tree, skipCodec 
 				return nil, err
 			}
 			return codec.decode(wire)
+		}
+		// Container tags describe the durable wire element types. A concrete
+		// destination still supplies the native types to restore at each leaf.
+		if v.Type != nil && checkpointContainerHasCodec(typ) {
+			node := *v
+			node.Type = nil
+			return internalSpecificTypeUnmarshalMode(&node, typ, false)
 		}
 	}
 

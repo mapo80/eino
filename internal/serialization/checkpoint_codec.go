@@ -68,3 +68,31 @@ func codecFor(t reflect.Type) (checkpointCodec, bool) {
 	checkpointCodecs.RUnlock()
 	return codec, ok
 }
+
+// checkpointContainerHasCodec reports whether a concrete destination has a
+// native codec below its outer container. Interface destinations retain the
+// wire's dynamic types; the original native type cannot be inferred from them.
+func checkpointContainerHasCodec(t reflect.Type) bool {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+	default:
+		return false
+	}
+	seen := make(map[reflect.Type]bool)
+	for !seen[t] {
+		seen[t] = true
+		if _, ok := codecFor(t); ok {
+			return true
+		}
+		switch t.Kind() {
+		case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Array:
+			t = t.Elem()
+		default:
+			return false
+		}
+	}
+	return false
+}
