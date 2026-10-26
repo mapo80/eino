@@ -640,13 +640,17 @@ func (r *runner) handleInterrupt(
 	return &interruptError{Info: intInfo}
 }
 
-// deepCopyState creates a deep copy of the state using serialization
+// deepCopyState creates a deep copy of the state using serialization.
+// The copy goes through the serializer's encoded tree without the final
+// byte encoding: encoding and parsing the whole state as one document only
+// adds buffers of the size of the state, and the parser's pooled buffers do
+// not survive a garbage collection.
 func deepCopyState(state any) (any, error) {
 	if state == nil {
 		return nil, nil
 	}
 	serializer := &serialization.InternalSerializer{}
-	data, err := serializer.Marshal(state)
+	tree, err := serializer.MarshalTree(state)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal state: %w", err)
 	}
@@ -658,7 +662,7 @@ func deepCopyState(state any) (any, error) {
 		stateType = stateType.Elem()
 	}
 	newStatePtr := reflect.New(stateType).Interface()
-	if err := serializer.Unmarshal(data, newStatePtr); err != nil {
+	if err := serializer.UnmarshalTree(tree, newStatePtr); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 	if isPtr {
