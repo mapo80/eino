@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
 )
@@ -410,11 +411,11 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 				return nil, err
 			}
 
-			key, err := json.Marshal(k.Interface())
+			key, err := marshalMapKey(k.Interface())
 			if err != nil {
 				return nil, fmt.Errorf("marshaling map key[%v] fail: %v", k.Interface(), err)
 			}
-			ret.MapValues[string(key)] = internalValue
+			ret.MapValues[key] = internalValue
 		}
 
 		return ret, nil
@@ -462,13 +463,55 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 	}
 }
 
+// marshalMapKey encodes a map key. A plain string key is encoded by
+// appendKeyString with the same bytes as sonic.MarshalString, without
+// taking sonic's pooled encoder; other keys go through sonic as before.
+func marshalMapKey(k any) (string, error) {
+	if str, ok := k.(string); ok {
+		return string(appendKeyString(make([]byte, 0, len(str)+2), str)), nil
+	}
+	return sonic.MarshalString(k)
+}
+
+// appendKeyString appends str as a JSON string the way sonic's default
+// configuration does: '"', '\\' and control characters are escaped (\t,
+// \n and \r by name, the others as \u00XX); everything else, including
+// '<', '>', '&', U+2028, U+2029 and invalid UTF-8, is copied as is.
+func appendKeyString(dst []byte, str string) []byte {
+	const hex = "0123456789abcdef"
+	dst = append(dst, '"')
+	for i := 0; i < len(str); i++ {
+		c := str[i]
+		switch {
+		case c == '"' || c == '\\':
+			dst = append(dst, '\\', c)
+		case c == '\t':
+			dst = append(dst, '\\', 't')
+		case c == '\n':
+			dst = append(dst, '\\', 'n')
+		case c == '\r':
+			dst = append(dst, '\\', 'r')
+		case c < 0x20:
+			dst = append(dst, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
+		default:
+			dst = append(dst, c)
+		}
+	}
+	return append(dst, '"')
+}
+
 // unmarshalLeaf decodes the JSON of one leaf value or map key. Leaves and map
-// keys are small documents encoded with encoding/json, which also decodes them
-// at a cost proportional to the leaf; sonic's decoder takes a pooled parser
-// with fixed megabyte buffers that is allocated again after every garbage
-// collection empties the pool.
+// keys are small documents; encoding/json decodes them at a cost proportional
+// to the leaf, while sonic's decoder takes a pooled parser with fixed
+// megabyte buffers that is allocated again after every garbage collection
+// empties the pool. On valid UTF-8 both decoders give the same value. sonic
+// keeps invalid UTF-8 as is where encoding/json replaces it with U+FFFD, so
+// such input still goes through sonic.
 func unmarshalLeaf(data []byte, v any) error {
-	return json.Unmarshal(data, v)
+	if utf8.Valid(data) {
+		return json.Unmarshal(data, v)
+	}
+	return sonic.Unmarshal(data, v)
 }
 
 func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {

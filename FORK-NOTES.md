@@ -20,5 +20,8 @@ commits. Each commit keeps the public behavior and adds its own test.
    keys are small documents; sonic's decoder allocates a pooled parser with 2 MiB of
    fixed buffers whenever a garbage collection has emptied the pool. Copying a small
    state right after a GC: 2.25 MB → 10.7 KB allocated.
+7. **internal/serialization: keep the checkpoint bytes of map keys and invalid UTF-8** — string
+   map keys are written with the bytes sonic writes and input with invalid UTF-8 is still
+   decoded by sonic; a checkpoint written before 6 reads back the same (`testdata`).
 
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
