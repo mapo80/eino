@@ -410,11 +410,11 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 				return nil, err
 			}
 
-			keyStr, err := sonic.MarshalString(k.Interface())
+			key, err := json.Marshal(k.Interface())
 			if err != nil {
 				return nil, fmt.Errorf("marshaling map key[%v] fail: %v", k.Interface(), err)
 			}
-			ret.MapValues[keyStr] = internalValue
+			ret.MapValues[string(key)] = internalValue
 		}
 
 		return ret, nil
@@ -462,6 +462,15 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 	}
 }
 
+// unmarshalLeaf decodes the JSON of one leaf value or map key. Leaves and map
+// keys are small documents encoded with encoding/json, which also decodes them
+// at a cost proportional to the leaf; sonic's decoder takes a pooled parser
+// with fixed megabyte buffers that is allocated again after every garbage
+// collection empties the pool.
+func unmarshalLeaf(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}
+
 func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 	if v == nil {
 		return nil, nil
@@ -487,7 +496,7 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 			return nil, fmt.Errorf("unknown type key: %v", v.Type)
 		}
 		pResult := reflect.New(resolvePointerNum(v.Type.PointerNum, t))
-		err := sonic.Unmarshal(v.JSONValue, pResult.Interface())
+		err := unmarshalLeaf(v.JSONValue, pResult.Interface())
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal type[%s] fail: %v, data: %s", t.String(), err, string(v.JSONValue))
 		}
@@ -568,7 +577,7 @@ func internalSpecificTypeUnmarshal(is *internalStruct, typ reflect.Type) (any, e
 	}
 	// simple type
 	v := reflect.New(typ)
-	err := sonic.Unmarshal(is.JSONValue, v.Interface())
+	err := unmarshalLeaf(is.JSONValue, v.Interface())
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal type[%s] fail: %v", typ.String(), err)
 	}
@@ -618,7 +627,7 @@ func setMapKVs(dResult reflect.Value, values map[string]*internalStruct) error {
 	t := dResult.Type()
 	for marshaledMapKey, internalValue := range values {
 		prkv := reflect.New(t.Key())
-		err := sonic.UnmarshalString(marshaledMapKey, prkv.Interface())
+		err := unmarshalLeaf([]byte(marshaledMapKey), prkv.Interface())
 		if err != nil {
 			return fmt.Errorf("unmarshal map key[%v] to type[%s] fail: %v", marshaledMapKey, t.Key(), err)
 		}

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
-	"runtime/metrics"
 	"strings"
 	"testing"
 
@@ -108,19 +107,24 @@ func TestDeepCopyStateEqualsSerializerRoundTrip(t *testing.T) {
 	}
 }
 
+// totalAlloc is the cumulative bytes allocated on the heap, exact to the
+// object (ReadMemStats flushes the per-P caches).
+func totalAlloc() uint64 {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return ms.TotalAlloc
+}
+
 // allocatedAfterGC is the bytes f allocates right after a garbage
 // collection (the parser's pooled buffers are gone after every GC, as during
 // a long run), the least of five runs.
 func allocatedAfterGC(f func()) uint64 {
-	sample := []metrics.Sample{{Name: "/gc/heap/allocs:bytes"}}
 	var best uint64
 	for i := 0; i < 5; i++ {
 		runtime.GC()
-		metrics.Read(sample)
-		before := sample[0].Value.Uint64()
+		before := totalAlloc()
 		f()
-		metrics.Read(sample)
-		if n := sample[0].Value.Uint64() - before; i == 0 || n < best {
+		if n := totalAlloc() - before; i == 0 || n < best {
 			best = n
 		}
 	}
@@ -144,5 +148,31 @@ func TestDeepCopyStateAllocatesLessThanByteRoundTrip(t *testing.T) {
 		size, copied, float64(copied)/size, roundTrip, float64(roundTrip)/size)
 	if copied > roundTrip/2 {
 		t.Fatalf("deepCopyState allocated %d bytes, more than half of the byte round trip (%d bytes)", copied, roundTrip)
+	}
+}
+
+// A small state must cost about its own size to copy, also right after the
+// garbage collections that empty the JSON decoder's pooled parsers: decoding
+// a leaf must not allocate a parser with fixed megabyte buffers.
+func TestDeepCopyStateOfSmallStateAfterGCAllocatesAboutTheState(t *testing.T) {
+	state := &deepCopyTestState{Vars: map[string]string{"a": "1", "b": "2"}, Items: []string{"x", "y"},
+		Nested: map[string][]int{"n": {1, 2}}, Count: 3, Inner: &deepCopyTestInner{Note: "note", Score: 0.5}}
+	var best uint64
+	for i := 0; i < 5; i++ {
+		// Two collections: the first moves pooled objects to the victim
+		// cache, the second drops them.
+		runtime.GC()
+		runtime.GC()
+		before := totalAlloc()
+		if _, err := deepCopyState(state); err != nil {
+			t.Fatal(err)
+		}
+		if n := totalAlloc() - before; i == 0 || n < best {
+			best = n
+		}
+	}
+	t.Logf("deepCopyState of a small state after GC allocates %d bytes", best)
+	if best > 64<<10 {
+		t.Fatalf("deepCopyState of a small state allocated %d bytes after GC (more than 64 KiB)", best)
 	}
 }
