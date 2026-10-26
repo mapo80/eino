@@ -563,6 +563,10 @@ func (g *graph) updateToValidateMap() error {
 	for {
 		hasChanged := false
 		for startNode := range g.toValidateMap {
+			if len(g.toValidateMap[startNode]) == 0 {
+				delete(g.toValidateMap, startNode)
+				continue
+			}
 			startNodeOutputType = g.getNodeOutputType(startNode)
 
 			for i := 0; i < len(g.toValidateMap[startNode]); i++ {
