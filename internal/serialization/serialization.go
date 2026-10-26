@@ -80,7 +80,43 @@ func (i *InternalSerializer) Unmarshal(data []byte, v any) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal: %w", err)
 	}
+	return assignUnmarshaled(val, v)
+}
 
+// Tree is the encoded form of a value without the final byte encoding. It is
+// immutable and shares no memory with the value it was made from or with the
+// values decoded from it, so it can stand in for the bytes of an in-memory
+// store.
+type Tree struct {
+	is *internalStruct
+}
+
+// MarshalTree is Marshal without the final byte encoding.
+func (i *InternalSerializer) MarshalTree(v any) (*Tree, error) {
+	is, err := internalMarshal(v, nil)
+	if err != nil {
+		return nil, err
+	}
+	if is == nil {
+		// Marshal encodes a nil tree as null, which decodes to an empty node.
+		is = &internalStruct{}
+	}
+	return &Tree{is: is}, nil
+}
+
+// UnmarshalTree is Unmarshal of a tree made by MarshalTree.
+func (i *InternalSerializer) UnmarshalTree(tree *Tree, v any) error {
+	if tree == nil || tree.is == nil {
+		return fmt.Errorf("failed to unmarshal: missing tree")
+	}
+	val, err := internalUnmarshal(tree.is, reflect.TypeOf(v))
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal: %w", err)
+	}
+	return assignUnmarshaled(val, v)
+}
+
+func assignUnmarshaled(val any, v any) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("failed to unmarshal: value must be a non-nil pointer")

@@ -213,7 +213,43 @@ type checkPointer struct {
 	serializer Serializer
 }
 
+// CheckPointTreeStore is an optional extension of an in-memory CheckPointStore.
+// When the store implements it and the graph uses the default serializer, the
+// checkpoint is kept as the serializer's encoded tree instead of bytes. Writing
+// and reading still encode and decode the whole checkpoint, so the stored value
+// shares no memory with the writer or the reader; only the byte encoding of the
+// tree is skipped. The tree is opaque and must be stored unchanged.
+type CheckPointTreeStore interface {
+	GetTree(ctx context.Context, id string) (any, bool, error)
+	SetTree(ctx context.Context, id string, tree any) error
+}
+
+func (c *checkPointer) treeStore() (CheckPointTreeStore, *serialization.InternalSerializer, bool) {
+	ts, ok := c.store.(CheckPointTreeStore)
+	if !ok {
+		return nil, nil, false
+	}
+	is, ok := c.serializer.(*serialization.InternalSerializer)
+	return ts, is, ok
+}
+
 func (c *checkPointer) get(ctx context.Context, id string) (*checkpoint, bool, error) {
+	if ts, is, ok := c.treeStore(); ok {
+		stored, existed, err := ts.GetTree(ctx, id)
+		if err != nil || existed == false {
+			return nil, existed, err
+		}
+		tree, ok := stored.(*serialization.Tree)
+		if !ok {
+			return nil, false, fmt.Errorf("failed to unmarshal: foreign checkpoint tree %T", stored)
+		}
+		cp := &checkpoint{}
+		if err = is.UnmarshalTree(tree, cp); err != nil {
+			return nil, false, err
+		}
+		return cp, true, nil
+	}
+
 	data, existed, err := c.store.Get(ctx, id)
 	if err != nil || existed == false {
 		return nil, existed, err
@@ -230,6 +266,14 @@ func (c *checkPointer) get(ctx context.Context, id string) (*checkpoint, bool, e
 
 func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error {
 	normalizeCheckpointTypedNilInputs(cp)
+
+	if ts, is, ok := c.treeStore(); ok {
+		tree, err := is.MarshalTree(cp)
+		if err != nil {
+			return err
+		}
+		return ts.SetTree(ctx, id, tree)
+	}
 
 	data, err := c.serializer.Marshal(cp)
 	if err != nil {
