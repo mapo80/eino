@@ -85,16 +85,16 @@ func (i *InternalSerializer) Unmarshal(data []byte, v any) error {
 }
 
 // Tree is the encoded form of a value without the final byte encoding. It is
-// immutable and shares no memory with the value it was made from or with the
-// values decoded from it, so it can stand in for the bytes of an in-memory
-// store.
+// immutable. Ordinary values share no memory with the source or decoded
+// values; registered checkpoint codecs may explicitly share immutable values
+// through Clone. It can stand in for the bytes of an in-memory store.
 type Tree struct {
 	is *internalStruct
 }
 
 // MarshalTree is Marshal without the final byte encoding.
 func (i *InternalSerializer) MarshalTree(v any) (*Tree, error) {
-	is, err := internalMarshal(v, nil)
+	is, err := internalMarshalMode(v, nil, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (i *InternalSerializer) UnmarshalTree(tree *Tree, v any) error {
 	if tree == nil || tree.is == nil {
 		return fmt.Errorf("failed to unmarshal: missing tree")
 	}
-	val, err := internalUnmarshal(tree.is, reflect.TypeOf(v))
+	val, err := internalUnmarshalMode(tree.is, reflect.TypeOf(v), true, false)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal: %w", err)
 	}
@@ -189,6 +189,11 @@ func unmarshal(data []byte, t reflect.Type) (any, error) {
 }
 
 type internalStruct struct {
+	// treeValue is private to in-memory Trees and is never serialized.
+	treeType     reflect.Type
+	treeValue    any
+	hasTreeValue bool
+
 	Type *valueType `json:",omitempty"`
 
 	JSONValue json.RawMessage `json:",omitempty"`
@@ -215,7 +220,14 @@ type valueType struct {
 	SliceValueType *valueType `json:",omitempty"`
 }
 
-func extractType(t reflect.Type) (*valueType, error) {
+func extractType(t reflect.Type) (*valueType, error) { return extractTypeMode(t, false) }
+
+func extractTypeMode(t reflect.Type, tree bool) (*valueType, error) {
+	if !tree {
+		if codec, ok := codecFor(t); ok {
+			t = codec.wire
+		}
+	}
 	ret := &valueType{}
 	for t.Kind() == reflect.Ptr {
 		ret.PointerNum += 1
@@ -223,16 +235,16 @@ func extractType(t reflect.Type) (*valueType, error) {
 	}
 	var err error
 	if t.Kind() == reflect.Map {
-		ret.MapKeyType, err = extractType(t.Key())
+		ret.MapKeyType, err = extractTypeMode(t.Key(), tree)
 		if err != nil {
 			return nil, err
 		}
-		ret.MapValueType, err = extractType(t.Elem())
+		ret.MapValueType, err = extractTypeMode(t.Elem(), tree)
 		if err != nil {
 			return nil, err
 		}
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		ret.SliceValueType, err = extractType(t.Elem())
+		ret.SliceValueType, err = extractTypeMode(t.Elem(), tree)
 		if err != nil {
 			return nil, err
 		}
@@ -283,15 +295,46 @@ func restoreType(vt *valueType) (reflect.Type, error) {
 }
 
 func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
+	return internalMarshalMode(v, fieldType, false, false)
+}
+
+func internalMarshalMode(v any, fieldType reflect.Type, tree, skipCodec bool) (*internalStruct, error) {
 	if v == nil ||
 		(reflect.ValueOf(v).IsZero() && fieldType != nil && fieldType.Kind() != reflect.Interface) {
 		return nil, nil
 	}
 
+	if !skipCodec {
+		if codec, ok := codecFor(reflect.TypeOf(v)); ok {
+			if tree {
+				if codec.clone != nil {
+					cloned, err := codec.clone(v)
+					if err != nil {
+						return nil, err
+					}
+					return &internalStruct{treeValue: cloned, hasTreeValue: true}, nil
+				}
+			} else {
+				wire, err := codec.encode(v)
+				if err != nil {
+					return nil, err
+				}
+				wireField := fieldType
+				if fieldType != nil && fieldType.Kind() != reflect.Interface {
+					wireField = codec.wire
+				}
+				return internalMarshalMode(wire, wireField, false, true)
+			}
+		}
+	}
 	ret := &internalStruct{}
 	rv := reflect.ValueOf(v)
 	rt := rv.Type()
 	typeUnspecific := fieldType == nil || fieldType.Kind() == reflect.Interface
+	if tree && typeUnspecific {
+		ret.treeType = rt
+		typeUnspecific = false
+	}
 
 	var pointerNum uint32
 	for rt.Kind() == reflect.Ptr {
@@ -370,7 +413,7 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 				k := field.Name
 				v := rv.Field(i)
 
-				internalValue, err := internalMarshal(v.Interface(), field.Type)
+				internalValue, err := internalMarshalMode(v.Interface(), field.Type, tree, false)
 				if err != nil {
 					return nil, err
 				}
@@ -387,13 +430,13 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 				PointerNum: pointerNum,
 			}
 			// map key type
-			ret.Type.MapKeyType, err = extractType(rt.Key())
+			ret.Type.MapKeyType, err = extractTypeMode(rt.Key(), tree)
 			if err != nil {
 				return nil, err
 			}
 
 			// map value type
-			ret.Type.MapValueType, err = extractType(rt.Elem())
+			ret.Type.MapValueType, err = extractTypeMode(rt.Elem(), tree)
 			if err != nil {
 				return nil, err
 			}
@@ -406,7 +449,7 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 			k := iter.Key()
 			v := iter.Value()
 
-			internalValue, err := internalMarshal(v.Interface(), rt.Elem())
+			internalValue, err := internalMarshalMode(v.Interface(), rt.Elem(), tree, false)
 			if err != nil {
 				return nil, err
 			}
@@ -423,7 +466,7 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 		if typeUnspecific {
 			var err error
 			ret.Type = &valueType{PointerNum: pointerNum}
-			ret.Type.SliceValueType, err = extractType(rt.Elem())
+			ret.Type.SliceValueType, err = extractTypeMode(rt.Elem(), tree)
 			if err != nil {
 				return nil, err
 			}
@@ -433,7 +476,7 @@ func internalMarshal(v any, fieldType reflect.Type) (*internalStruct, error) {
 		ret.SliceValues = make([]*internalStruct, length)
 
 		for i := 0; i < length; i++ {
-			internalValue, err := internalMarshal(rv.Index(i).Interface(), rt.Elem())
+			internalValue, err := internalMarshalMode(rv.Index(i).Interface(), rt.Elem(), tree, false)
 			if err != nil {
 				return nil, err
 			}
@@ -515,8 +558,55 @@ func unmarshalLeaf(data []byte, v any) error {
 }
 
 func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
+	return internalUnmarshalMode(v, typ, false, false)
+}
+
+func internalUnmarshalMode(v *internalStruct, typ reflect.Type, tree, skipCodec bool) (any, error) {
 	if v == nil {
 		return nil, nil
+	}
+	if tree && v.hasTreeValue {
+		if v.treeValue == nil {
+			return nil, nil
+		}
+		codec, ok := codecFor(reflect.TypeOf(v.treeValue))
+		if !ok || codec.clone == nil {
+			return nil, fmt.Errorf("missing checkpoint clone codec for %T", v.treeValue)
+		}
+		return codec.clone(v.treeValue)
+	}
+	if tree && v.treeType != nil {
+		typ = v.treeType
+	}
+	if !tree && !skipCodec {
+		native := typ
+		for native.Kind() == reflect.Ptr {
+			if _, ok := codecFor(native); ok {
+				break
+			}
+			native = native.Elem()
+		}
+		if v.Type != nil {
+			restored, err := restoreType(v.Type)
+			if err != nil {
+				return nil, err
+			}
+			// A concrete destination can represent a historical wire type.
+			if _, registered := codecFor(native); !registered {
+				native = restored
+			}
+		}
+		if codec, ok := codecFor(native); ok {
+			// The outer tag identifies the native registration; the codec
+			// supplies the concrete historical field layout.
+			wireNode := *v
+			wireNode.Type = nil
+			wire, err := internalUnmarshalMode(&wireNode, codec.wire, false, true)
+			if err != nil {
+				return nil, err
+			}
+			return codec.decode(wire)
+		}
 	}
 
 	if v.Type == nil {
@@ -529,7 +619,7 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 			}
 			return pv.Elem().Interface(), nil
 		}
-		return internalSpecificTypeUnmarshal(v, typ)
+		return internalSpecificTypeUnmarshalMode(v, typ, tree)
 	}
 
 	if len(v.Type.SimpleType) != 0 {
@@ -554,7 +644,7 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 		}
 		result, dResult := createValueFromType(resolvePointerNum(v.Type.PointerNum, rt))
 
-		err := setStructFields(dResult, v.MapValues)
+		err := setStructFieldsMode(dResult, v.MapValues, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -574,7 +664,7 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 		}
 
 		result, dResult := createValueFromType(reflect.MapOf(rkt, rvt))
-		err = setMapKVs(dResult, v.MapValues)
+		err = setMapKVsMode(dResult, v.MapValues, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -588,7 +678,7 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 	}
 
 	result, dResult := createValueFromType(reflect.SliceOf(rvt))
-	err = setSliceElems(dResult, v.SliceValues)
+	err = setSliceElemsMode(dResult, v.SliceValues, tree)
 	if err != nil {
 		return nil, err
 	}
@@ -596,23 +686,27 @@ func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {
 }
 
 func internalSpecificTypeUnmarshal(is *internalStruct, typ reflect.Type) (any, error) {
+	return internalSpecificTypeUnmarshalMode(is, typ, false)
+}
+
+func internalSpecificTypeUnmarshalMode(is *internalStruct, typ reflect.Type, tree bool) (any, error) {
 	_, dtyp := derefPointerNum(typ)
 	result, dResult := createValueFromType(typ)
 
 	if dtyp.Kind() == reflect.Struct {
-		err := setStructFields(dResult, is.MapValues)
+		err := setStructFieldsMode(dResult, is.MapValues, tree)
 		if err != nil {
 			return nil, err
 		}
 		return result.Interface(), nil
 	} else if dtyp.Kind() == reflect.Map {
-		err := setMapKVs(dResult, is.MapValues)
+		err := setMapKVsMode(dResult, is.MapValues, tree)
 		if err != nil {
 			return nil, err
 		}
 		return result.Interface(), nil
 	} else if dtyp.Kind() == reflect.Array || dtyp.Kind() == reflect.Slice {
-		err := setSliceElems(dResult, is.SliceValues)
+		err := setSliceElemsMode(dResult, is.SliceValues, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -628,6 +722,10 @@ func internalSpecificTypeUnmarshal(is *internalStruct, typ reflect.Type) (any, e
 }
 
 func setSliceElems(dResult reflect.Value, values []*internalStruct) error {
+	return setSliceElemsMode(dResult, values, false)
+}
+
+func setSliceElemsMode(dResult reflect.Value, values []*internalStruct, tree bool) error {
 	t := dResult.Type()
 
 	// Handle arrays differently from slices
@@ -637,7 +735,7 @@ func setSliceElems(dResult reflect.Value, values []*internalStruct) error {
 			if i >= dResult.Len() {
 				return fmt.Errorf("array index out of bounds: trying to set index %d in array of length %d", i, dResult.Len())
 			}
-			value, err := internalUnmarshal(internalValue, t.Elem())
+			value, err := internalUnmarshalMode(internalValue, t.Elem(), tree, false)
 			if err != nil {
 				return fmt.Errorf("unmarshal array[%s] element %d fail: %v", t.Elem(), i, err)
 			}
@@ -652,7 +750,7 @@ func setSliceElems(dResult reflect.Value, values []*internalStruct) error {
 
 	// For slices, use Append as before
 	for _, internalValue := range values {
-		value, err := internalUnmarshal(internalValue, t.Elem())
+		value, err := internalUnmarshalMode(internalValue, t.Elem(), tree, false)
 		if err != nil {
 			return fmt.Errorf("unmarshal slice[%s] fail: %v", t.Elem(), err)
 		}
@@ -667,6 +765,10 @@ func setSliceElems(dResult reflect.Value, values []*internalStruct) error {
 }
 
 func setMapKVs(dResult reflect.Value, values map[string]*internalStruct) error {
+	return setMapKVsMode(dResult, values, false)
+}
+
+func setMapKVsMode(dResult reflect.Value, values map[string]*internalStruct, tree bool) error {
 	t := dResult.Type()
 	for marshaledMapKey, internalValue := range values {
 		prkv := reflect.New(t.Key())
@@ -675,7 +777,7 @@ func setMapKVs(dResult reflect.Value, values map[string]*internalStruct) error {
 			return fmt.Errorf("unmarshal map key[%v] to type[%s] fail: %v", marshaledMapKey, t.Key(), err)
 		}
 
-		value, err := internalUnmarshal(internalValue, t.Elem())
+		value, err := internalUnmarshalMode(internalValue, t.Elem(), tree, false)
 		if err != nil {
 			return fmt.Errorf("unmarshal map value fail: %v", err)
 		}
@@ -689,13 +791,17 @@ func setMapKVs(dResult reflect.Value, values map[string]*internalStruct) error {
 }
 
 func setStructFields(dResult reflect.Value, values map[string]*internalStruct) error {
+	return setStructFieldsMode(dResult, values, false)
+}
+
+func setStructFieldsMode(dResult reflect.Value, values map[string]*internalStruct, tree bool) error {
 	t := dResult.Type()
 	for k, internalValue := range values {
 		sf, ok := t.FieldByName(k)
 		if !ok {
 			continue
 		}
-		value, err := internalUnmarshal(internalValue, sf.Type)
+		value, err := internalUnmarshalMode(internalValue, sf.Type, tree, false)
 		if err != nil {
 			return fmt.Errorf("unmarshal map field[%v] fail: %v", k, err)
 		}
