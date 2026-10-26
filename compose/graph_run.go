@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/cloudwego/eino/internal"
 	"github.com/cloudwego/eino/internal/core"
@@ -80,6 +81,13 @@ type runner struct {
 	interruptAfterNodes  []string
 
 	mergeConfigs map[string]FanInMergeConfig
+
+	// predecessorSets holds the set form of dataPredecessors and
+	// controlPredecessors. They depend only on the compiled graph, so they are
+	// built once per runner and shared read-only by every run's channelManager.
+	predecessorSetsOnce   sync.Once
+	dataPredecessorSet    map[string]map[string]struct{}
+	controlPredecessorSet map[string]map[string]struct{}
 }
 
 func (r *runner) invoke(ctx context.Context, input any, opts ...Option) (any, error) {
@@ -1066,6 +1074,29 @@ func (r *runner) initTaskManager(runWrapper runnableCallWrapper, cancelVal *grap
 	return tm
 }
 
+// predecessorSets returns the set form of the runner's predecessor lists. The
+// maps are computed on first use and never mutated afterwards: callers must
+// treat them as read-only (channelManager only looks keys up).
+func (r *runner) predecessorSets() (data, control map[string]map[string]struct{}) {
+	r.predecessorSetsOnce.Do(func() {
+		r.dataPredecessorSet = toPredecessorSet(r.dataPredecessors)
+		r.controlPredecessorSet = toPredecessorSet(r.controlPredecessors)
+	})
+	return r.dataPredecessorSet, r.controlPredecessorSet
+}
+
+func toPredecessorSet(lists map[string][]string) map[string]map[string]struct{} {
+	sets := make(map[string]map[string]struct{}, len(lists))
+	for k, vs := range lists {
+		set := make(map[string]struct{}, len(vs))
+		for _, v := range vs {
+			set[v] = struct{}{}
+		}
+		sets[k] = set
+	}
+	return sets
+}
+
 func (r *runner) initChannelManager(isStream bool) *channelManager {
 	builder := r.chanBuilder
 	if builder == nil {
@@ -1079,20 +1110,7 @@ func (r *runner) initChannelManager(isStream bool) *channelManager {
 
 	chs[END] = builder(r.controlPredecessors[END], r.dataPredecessors[END], r.outputZeroValue, r.outputEmptyStream)
 
-	dataPredecessors := make(map[string]map[string]struct{})
-	for k, vs := range r.dataPredecessors {
-		dataPredecessors[k] = make(map[string]struct{})
-		for _, v := range vs {
-			dataPredecessors[k][v] = struct{}{}
-		}
-	}
-	controlPredecessors := make(map[string]map[string]struct{})
-	for k, vs := range r.controlPredecessors {
-		controlPredecessors[k] = make(map[string]struct{})
-		for _, v := range vs {
-			controlPredecessors[k][v] = struct{}{}
-		}
-	}
+	dataPredecessors, controlPredecessors := r.predecessorSets()
 
 	for k, v := range chs {
 		if cfg, ok := r.mergeConfigs[k]; ok {
