@@ -84,6 +84,44 @@ func (i *InternalSerializer) Unmarshal(data []byte, v any) error {
 	return assignUnmarshaled(val, v)
 }
 
+// Parsed is the parsed form of the bytes returned by MarshalParsed: decoding
+// it gives the value Unmarshal gives for those bytes. It shares no memory with
+// the marshaled value and is never modified, so it can be decoded any number
+// of times, also concurrently.
+type Parsed struct {
+	is *internalStruct
+}
+
+// MarshalParsed is Marshal that also returns the parsed form of the bytes.
+func (i *InternalSerializer) MarshalParsed(v any) ([]byte, *Parsed, error) {
+	is, err := internalMarshal(v, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := sonic.Marshal(is)
+	if err != nil {
+		return nil, nil, err
+	}
+	if is == nil {
+		// The bytes are null, which parses to an empty node.
+		is = &internalStruct{}
+	}
+	return data, &Parsed{is: is}, nil
+}
+
+// UnmarshalParsed is Unmarshal of the bytes p was made with, without parsing
+// them again.
+func (i *InternalSerializer) UnmarshalParsed(p *Parsed, v any) error {
+	if p == nil || p.is == nil {
+		return fmt.Errorf("failed to unmarshal: missing parsed value")
+	}
+	val, err := internalUnmarshal(p.is, reflect.TypeOf(v))
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal: %w", err)
+	}
+	return assignUnmarshaled(val, v)
+}
+
 // Tree is the encoded form of a value without the final byte encoding. It is
 // immutable. Ordinary values share no memory with the source or decoded
 // values; registered checkpoint codecs may explicitly share immutable values

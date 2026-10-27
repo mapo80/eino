@@ -18,6 +18,7 @@ package compose
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"reflect"
@@ -256,12 +257,25 @@ func (c *checkPointer) get(ctx context.Context, id string) (*checkpoint, bool, e
 	}
 
 	cp := &checkpoint{}
-	err = c.serializer.Unmarshal(data, cp)
+	if is, ok := c.serializer.(*serialization.InternalSerializer); ok {
+		if parsed := checkpointMemos.lookup(id, data); parsed != nil {
+			if err = is.UnmarshalParsed(parsed, cp); err != nil {
+				return nil, false, err
+			}
+			return cp, true, nil
+		}
+	}
+	err = unmarshalCheckpointBytes(c.serializer, data, cp)
 	if err != nil {
 		return nil, false, err
 	}
 
 	return cp, true, nil
+}
+
+// unmarshalCheckpointBytes decodes checkpoint bytes read from the store.
+var unmarshalCheckpointBytes = func(serializer Serializer, data []byte, cp *checkpoint) error {
+	return serializer.Unmarshal(data, cp)
 }
 
 func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error {
@@ -273,6 +287,21 @@ func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error
 			return err
 		}
 		return ts.SetTree(ctx, id, tree)
+	}
+
+	if is, ok := c.serializer.(*serialization.InternalSerializer); ok {
+		data, parsed, err := is.MarshalParsed(cp)
+		if err != nil {
+			return err
+		}
+		// The digest is taken before the store sees the bytes.
+		sum := sha256.Sum256(data)
+		if err = c.store.Set(ctx, id, data); err != nil {
+			checkpointMemos.forget(id)
+			return err
+		}
+		checkpointMemos.remember(id, sum, len(data), parsed)
+		return nil
 	}
 
 	data, err := c.serializer.Marshal(cp)

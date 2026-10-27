@@ -32,5 +32,13 @@ commits. Each commit keeps the public behavior and adds its own test.
    retain the existing serializer behavior; the codec adds no wire marker.
    Covered by named codec/container/nil tests, the serialization suite, and
    `TestCheckPointTreeStoreIsolatedAndEqualToBytes`.
+9. **compose: read a checkpoint just written without parsing its bytes** — with the
+   default serializer, the checkpointer keeps the parsed form of the bytes it hands to
+   the store and their SHA-256, for the checkpoints most recently written (at most
+   4 MiB of bytes). A read whose bytes have that digest decodes a new checkpoint from
+   the parsed form; any other bytes are decoded as before. The parsed form shares no
+   memory with the writer and is never modified, so the writer, canceled tasks still
+   running and every reader keep owning their values. Checkpoint of 300 messages read
+   back: 2.7 MB → 0.78 MB and 27.2k → 14.8k allocations per read.
 
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
