@@ -124,6 +124,49 @@ type channelManager struct {
 	preNodeHandlerManager *preNodeHandlerManager
 }
 
+// checkpointChannels is what a checkpoint keeps of a run's channels: every
+// channel except those still as they were built (no value received, no
+// dependency reported, not skipped). loadChannels leaves a channel the
+// checkpoint does not name as it was built, so restoring the smaller
+// checkpoint yields the same channels; a checkpoint that names every
+// channel reads back as before. A graph of a few hundred nodes paused at
+// one of them wrote every empty channel, about 94 bytes each, at every
+// checkpoint, and read them all back at every resume.
+func checkpointChannels(channels map[string]channel) map[string]channel {
+	kept := make(map[string]channel, len(channels))
+	for key, ch := range channels {
+		if !channelAsBuilt(ch) {
+			kept[key] = ch
+		}
+	}
+	return kept
+}
+
+// channelAsBuilt reports whether ch is in the state its builder creates it
+// in (pregelChannelBuilder, dagChannelBuilder).
+func channelAsBuilt(ch channel) bool {
+	switch c := ch.(type) {
+	case *pregelChannel:
+		return len(c.Values) == 0
+	case *dagChannel:
+		if len(c.Values) != 0 || c.Skipped {
+			return false
+		}
+		for _, state := range c.ControlPredecessors {
+			if state != dependencyStateWaiting {
+				return false
+			}
+		}
+		for _, indirect := range c.DataPredecessors {
+			if indirect {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func (c *channelManager) loadChannels(channels map[string]channel) error {
 	for key, ch := range c.channels {
 		if nCh, ok := channels[key]; ok {

@@ -577,7 +577,7 @@ func (r *runner) handleInterrupt(
 	publishSubGraphCheckpoint func(*subGraphInterruptError),
 ) error {
 	cp := &checkpoint{
-		Channels:       channels,
+		Channels:       checkpointChannels(channels),
 		Inputs:         make(map[string]any),
 		SkipPreHandler: map[string]bool{},
 	}
@@ -726,7 +726,7 @@ func (r *runner) handleInterruptWithSubGraphAndRerunNodes(
 	}
 
 	cp := &checkpoint{
-		Channels:       cm.channels,
+		Channels:       checkpointChannels(cm.channels),
 		Inputs:         make(map[string]any),
 		SkipPreHandler: skipPreHandler,
 		SubGraphs:      make(map[string]*checkpoint),
