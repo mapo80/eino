@@ -41,4 +41,55 @@ commits. Each commit keeps the public behavior and adds its own test.
    running and every reader keep owning their values. Checkpoint of 300 messages read
    back: 2.7 MB → 0.78 MB and 27.2k → 14.8k allocations per read.
 
+## Branch `arc/json-v2`, tag `v0.9.22-arc.1` — one JSON library
+
+Base: `perf/checkpoint-memo` at `b1e354e5` (`v0.9.22` + changes 1–9 above), the
+version ARC pinned as `v0.10.0-alpha.29.0.20261027190430-b1e354e52d39`. Goal: ARC's
+server build links only the standard library's `encoding/json/v2` and
+`encoding/json/jsontext`. `go 1.27`.
+
+10. **perf: read and write JSON with encoding/json/v2 instead of sonic** (`7b09cd34`) —
+    `internal/einojson`: `encoding/json/v2` with `encoding/json`'s semantics
+    (`DefaultOptionsV1`) and sonic's escaping (no HTML or U+2028/2029 escapes), map keys
+    sorted. Every sonic call goes through it (tool arguments and results, agent tools,
+    plan/execute, adk middlewares, the message parser's key path with `ValueAt`, the
+    checkpoint serializer). Checkpoint map keys are quoted by `jsontext.AppendQuote`;
+    leaves are read by `encoding/json` only, so change 7 is withdrawn: invalid UTF-8 in a
+    checkpoint reads as U+FFFD. `bytedance/sonic` remains a test dependency only.
+11. **refactor(schema): remove the Jinja2 format type and gonja** (`790891af`) — `FormatType`
+    keeps `FString` and `GoTemplate`; `nikolalohinski/gonja`, `json-iterator/go` and
+    `modern-go/reflect2` leave the module. The multiquery default prompt is a GoTemplate
+    with the same text.
+12. **perf(serialization): write and read the checkpoint wire as jsontext tokens**
+    (`7688d8a7`) — `internalStruct`/`valueType` implement `MarshalJSONTo`/`UnmarshalJSONFrom`
+    (no reflection; names and type keys through a 256-entry string cache);
+    `einojson.Marshal` writes into a pooled buffer.
+
+Equivalence (tests in the fork):
+- `internal/einojson`: same bytes as sonic's default configuration (keys sorted) for
+  structs, tags, omitempty, maps, nil/empty slices, floats at the edges, int64/uint64
+  limits, `RawMessage`, `[]byte`, `time.Time`, `,string`; same values and error outcomes on
+  27 inputs into struct, map, interface and raw targets (case variants, duplicates, exact
+  and out-of-range numbers, nulls, escapes, trailing data, malformed input); `ValueAt` =
+  `sonic.GetFromString` bytes on 8 documents × 15 paths. Tested differences: invalid
+  UTF-8 written and read as U+FFFD (sonic copied the bytes); `\b` `\f` instead of
+  `\u0008` `\u000c`; a number beyond float64 kept as `RawMessage` is accepted.
+- `internal/serialization`: map keys = `einojson.MarshalString`, equal to sonic's bytes
+  for valid UTF-8 without `\b`/`\f` and read back identical in every case; leaves decode
+  as sonic on valid UTF-8; the token codec reads and writes as reflection
+  (`TestWire*`).
+- `compose`: `TestCheckpointWrittenWithSonicReadsBack` — the checkpoint written with
+  sonic (`testdata/checkpoint_33e49389.json`) reads back equal to the one written now;
+  the encodings have the same content (key order and the spelling of invalid UTF-8,
+  `\b`, `\f` in keys aside).
+- Upstream suite green (`go test ./...`), as on the base.
+
+Measures (`BenchmarkCheckpointJSON`, a 20-turn conversation with tool calls, Apple M2 Pro,
+go1.27.1, n=8, machine shared with other loads, times indicative):
+
+| | sonic (base) | json/v2 + tokens |
+|---|---|---|
+| marshal | 332 µs, 211 KiB, 2 328 allocs | 246 µs, 176 KiB, 2 204 allocs |
+| unmarshal | 372 µs, 317 KiB, 3 477 allocs | 574 µs (±11 %), 182 KiB, 3 338 allocs |
+
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
