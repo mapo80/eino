@@ -33,13 +33,6 @@ func TestFormat(t *testing.T) {
 		schema.MessagesPlaceholder("chat_history", true),
 		schema.UserMessage("question: {question}"),
 	}
-	jinja2TestTemplate := []schema.MessagesTemplate{
-		schema.SystemMessage(
-			"you are a helpful assistant.\n" +
-				"here is the context: {{context}}"),
-		schema.MessagesPlaceholder("chat_history", true),
-		schema.UserMessage("question: {{question}}"),
-	}
 	goFmtTestTemplate := []schema.MessagesTemplate{
 		schema.SystemMessage(
 			"you are a helpful assistant.\n" +
@@ -67,12 +60,6 @@ func TestFormat(t *testing.T) {
 	// FString
 	chatTemplate := FromMessages(schema.FString, pyFmtTestTemplate...)
 	msgs, err := chatTemplate.Format(context.Background(), testValues)
-	assert.Nil(t, err)
-	assert.Equal(t, expected, msgs)
-
-	// Jinja2
-	chatTemplate = FromMessages(schema.Jinja2, jinja2TestTemplate...)
-	msgs, err = chatTemplate.Format(context.Background(), testValues)
 	assert.Nil(t, err)
 	assert.Equal(t, expected, msgs)
 

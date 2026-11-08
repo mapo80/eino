@@ -23,14 +23,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"text/template"
 
-	"github.com/nikolalohinski/gonja"
-	"github.com/nikolalohinski/gonja/config"
-	"github.com/nikolalohinski/gonja/exec"
-	"github.com/nikolalohinski/gonja/nodes"
-	"github.com/nikolalohinski/gonja/parser"
 	"github.com/slongfield/pyfmt"
 
 	"github.com/cloudwego/eino/internal"
@@ -101,8 +95,6 @@ const (
 	FString FormatType = 0
 	// GoTemplate https://pkg.go.dev/text/template.
 	GoTemplate FormatType = 1
-	// Jinja2 Supported by gonja(github.com/nikolalohinski/gonja), which is a implementation of https://jinja.palletsprojects.com/en/3.1.x/templates/.
-	Jinja2 FormatType = 2
 )
 
 // RoleType is the type of the role of a message.
@@ -651,20 +643,6 @@ func formatContent(content string, vs map[string]any, formatType FormatType) (st
 			return "", err
 		}
 		return sb.String(), nil
-	case Jinja2:
-		env, err := getJinjaEnv()
-		if err != nil {
-			return "", err
-		}
-		tpl, err := env.FromString(content)
-		if err != nil {
-			return "", err
-		}
-		out, err := tpl.Execute(vs)
-		if err != nil {
-			return "", err
-		}
-		return out, nil
 	default:
 		return "", fmt.Errorf("unknown format type: %v", formatType)
 	}
@@ -1873,81 +1851,4 @@ func ConcatMessageStream(s *StreamReader[*Message]) (*Message, error) {
 	}
 
 	return ConcatMessages(msgs)
-}
-
-// custom jinja env
-var jinjaEnvOnce sync.Once
-var jinjaEnv *gonja.Environment
-var envInitErr error
-
-const (
-	jinjaInclude = "include"
-	jinjaExtends = "extends"
-	jinjaImport  = "import"
-	jinjaFrom    = "from"
-	jinjaFile    = "file"
-	jinjaFileSet = "fileset"
-)
-
-func getJinjaEnv() (*gonja.Environment, error) {
-	jinjaEnvOnce.Do(func() {
-		jinjaEnv = gonja.NewEnvironment(config.DefaultConfig, gonja.DefaultLoader)
-		formatInitError := "init jinja env fail: %w"
-		var err error
-		if jinjaEnv.Statements.Exists(jinjaInclude) {
-			err = jinjaEnv.Statements.Replace(jinjaInclude, func(parser *parser.Parser, args *parser.Parser) (nodes.Statement, error) {
-				return nil, fmt.Errorf("keyword[include] has been disabled")
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-		if jinjaEnv.Statements.Exists(jinjaExtends) {
-			err = jinjaEnv.Statements.Replace(jinjaExtends, func(parser *parser.Parser, args *parser.Parser) (nodes.Statement, error) {
-				return nil, fmt.Errorf("keyword[extends] has been disabled")
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-		if jinjaEnv.Statements.Exists(jinjaFrom) {
-			err = jinjaEnv.Statements.Replace(jinjaFrom, func(parser *parser.Parser, args *parser.Parser) (nodes.Statement, error) {
-				return nil, fmt.Errorf("keyword[from] has been disabled")
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-		if jinjaEnv.Statements.Exists(jinjaImport) {
-			err = jinjaEnv.Statements.Replace(jinjaImport, func(parser *parser.Parser, args *parser.Parser) (nodes.Statement, error) {
-				return nil, fmt.Errorf("keyword[import] has been disabled")
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-		if jinjaEnv.Filters.Exists(jinjaFile) {
-			err = jinjaEnv.Filters.Replace(jinjaFile, func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
-				return exec.AsValue(fmt.Errorf("keyword[file] has been disabled"))
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-		if jinjaEnv.Filters.Exists(jinjaFileSet) {
-			err = jinjaEnv.Filters.Replace(jinjaFileSet, func(e *exec.Evaluator, in *exec.Value, params *exec.VarArgs) *exec.Value {
-				return exec.AsValue(fmt.Errorf("keyword[fileset] has been disabled"))
-			})
-			if err != nil {
-				envInitErr = fmt.Errorf(formatInitError, err)
-				return
-			}
-		}
-	})
-	return jinjaEnv, envInitErr
 }

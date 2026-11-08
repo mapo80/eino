@@ -29,16 +29,12 @@ import (
 
 func TestMessageTemplate(t *testing.T) {
 	pyFmtMessage := UserMessage("input: {question}")
-	jinja2Message := UserMessage("input: {{question}}")
 	goTemplateMessage := UserMessage("input: {{.question}}")
 	ctx := context.Background()
 	question := "what's the weather today"
 	expected := []*Message{UserMessage("input: " + question)}
 
 	ms, err := pyFmtMessage.Format(ctx, map[string]any{"question": question}, FString)
-	assert.Nil(t, err)
-	assert.True(t, reflect.DeepEqual(expected, ms))
-	ms, err = jinja2Message.Format(ctx, map[string]any{"question": question}, Jinja2)
 	assert.Nil(t, err)
 	assert.True(t, reflect.DeepEqual(expected, ms))
 	ms, err = goTemplateMessage.Format(ctx, map[string]any{"question": question}, GoTemplate)

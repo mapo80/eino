@@ -778,7 +778,7 @@ func TestFanInToSameDest(t *testing.T) {
 		wf.AddLambdaNode("2", InvokableLambda(func(ctx context.Context, in string) (output string, err error) {
 			return in, nil
 		}), WithOutputKey("q2")).AddInput(START)
-		wf.AddChatTemplateNode("prompt", prompt.FromMessages(schema.Jinja2, schema.UserMessage("{{q1}}_{{q2}}"))).
+		wf.AddChatTemplateNode("prompt", prompt.FromMessages(schema.GoTemplate, schema.UserMessage("{{.q1}}_{{.q2}}"))).
 			AddInput("1", MapFields("q1", "q1")).
 			AddInput("2", MapFields("q2", "q2"))
 		wf.End().AddInput("prompt")

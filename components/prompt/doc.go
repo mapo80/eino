@@ -23,10 +23,9 @@
 // ready to pass to a [model.BaseChatModel]. It is typically the first node in
 // a pipeline, sitting before the ChatModel.
 //
-// The built-in [DefaultChatTemplate] supports three template syntaxes:
+// The built-in [DefaultChatTemplate] supports two template syntaxes:
 //   - FString: {variable} substitution
 //   - GoTemplate: Go's text/template with conditionals and loops
-//   - Jinja2: Jinja2 template syntax
 //
 // # Construction
 //

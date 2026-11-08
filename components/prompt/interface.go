@@ -29,7 +29,7 @@ var _ AgenticChatTemplate = &DefaultAgenticChatTemplate{}
 //
 // Format substitutes the values from vs into the template's message list and
 // returns the resulting []*schema.Message. The exact substitution syntax
-// (FString, GoTemplate, Jinja2) is determined at construction time.
+// (FString, GoTemplate) is determined at construction time.
 //
 // Variable keys present in the template but absent from vs produce a runtime
 // error — there is no compile-time safety. Prefer consistent variable naming

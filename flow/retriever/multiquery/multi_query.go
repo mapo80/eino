@@ -37,7 +37,7 @@ const (
 	Your role is to create three different versions of the user query to retrieve relevant documents from store.
     Your goal is to improve the performance of similarity search by generating text from different perspectives based on the user query.
 	Only provide the generated queries and separate them by newlines. 
-	user query: {{query}}`
+	user query: {{.query}}`
 	defaultQueryVariable = "query"
 	defaultMaxQueriesNum = 5
 )
@@ -86,7 +86,7 @@ func NewRetriever(ctx context.Context, config *Config) (retriever.Retriever, err
 		variable := config.QueryVar
 		parser := config.LLMOutputParser
 		if tpl == nil {
-			tpl = prompt.FromMessages(schema.Jinja2, schema.UserMessage(defaultRewritePrompt))
+			tpl = prompt.FromMessages(schema.GoTemplate, schema.UserMessage(defaultRewritePrompt))
 			variable = defaultQueryVariable
 		}
 		if parser == nil {

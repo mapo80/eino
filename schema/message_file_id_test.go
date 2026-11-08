@@ -33,7 +33,6 @@ func TestMediaFileID(t *testing.T) {
 	}{
 		{"fstring", FString, "{file_id}"},
 		{"go_template", GoTemplate, "{{.file_id}}"},
-		{"jinja2", Jinja2, "{{file_id}}"},
 	} {
 		t.Run(format.name, func(t *testing.T) {
 			common := MessagePartCommon{FileID: &format.template}
