@@ -21,7 +21,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/filesystem"
@@ -253,7 +253,7 @@ func typedNewWriteTodos[M adk.MessageType]() (adk.TypedChatModelAgentMiddleware[
 
 	t, err := utils.InferTool("write_todos", toolDesc, func(ctx context.Context, input writeTodosArguments) (output string, err error) {
 		adk.AddSessionValue(ctx, SessionKeyTodos, input.Todos)
-		todos, err := sonic.MarshalString(input.Todos)
+		todos, err := einojson.MarshalString(input.Todos)
 		if err != nil {
 			return "", err
 		}

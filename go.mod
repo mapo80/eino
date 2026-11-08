@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino
 
-go 1.18
+go 1.27
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
@@ -42,6 +42,5 @@ require (
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.28.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )

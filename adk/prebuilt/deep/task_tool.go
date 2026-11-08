@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 	"github.com/slongfield/pyfmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -164,7 +164,7 @@ func (t *typedTaskTool[M]) InvokableRun(ctx context.Context, argumentsInJSON str
 		return "", fmt.Errorf("subagent type %s not found", input.SubagentType)
 	}
 
-	params, err := sonic.MarshalString(map[string]string{
+	params, err := einojson.MarshalString(map[string]string{
 		"request": input.Description,
 	})
 	if err != nil {

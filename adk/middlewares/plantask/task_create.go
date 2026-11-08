@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk/internal"
 	"github.com/cloudwego/eino/components/tool"
@@ -90,7 +90,7 @@ func (t *taskCreateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	defer t.lock.Unlock()
 
 	params := &taskCreateArgs{}
-	err := sonic.UnmarshalString(argumentsInJSON, params)
+	err := einojson.UnmarshalString(argumentsInJSON, params)
 	if err != nil {
 		return "", err
 	}
@@ -143,7 +143,7 @@ func (t *taskCreateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		Metadata:    params.Metadata,
 	}
 
-	taskData, err := sonic.MarshalString(newTask)
+	taskData, err := einojson.MarshalString(newTask)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal task #%d failed, err: %w", TaskCreateToolName, taskID, err)
 	}
@@ -171,7 +171,7 @@ func (t *taskCreateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		Result: fmt.Sprintf("Task #%d created successfully: %s", taskID, params.Subject),
 	}
 
-	jsonResp, err := sonic.MarshalString(resp)
+	jsonResp, err := einojson.MarshalString(resp)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskCreateToolName, err)
 	}

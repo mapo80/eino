@@ -18,11 +18,11 @@ package serialization
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"reflect"
-	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 )
 
 var m = map[string]reflect.Type{}
@@ -73,7 +73,7 @@ func (i *InternalSerializer) Marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 
-	return sonic.Marshal(is)
+	return einojson.Marshal(is)
 }
 
 func (i *InternalSerializer) Unmarshal(data []byte, v any) error {
@@ -98,7 +98,7 @@ func (i *InternalSerializer) MarshalParsed(v any) ([]byte, *Parsed, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	data, err := sonic.Marshal(is)
+	data, err := einojson.Marshal(is)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,7 +219,7 @@ func assignUnmarshaled(val any, v any) error {
 
 func unmarshal(data []byte, t reflect.Type) (any, error) {
 	is := &internalStruct{}
-	err := sonic.Unmarshal(data, is)
+	err := einojson.Unmarshal(data, is)
 	if err != nil {
 		return nil, err
 	}
@@ -552,55 +552,22 @@ func internalMarshalMode(v any, fieldType reflect.Type, tree, skipCodec bool) (*
 	}
 }
 
-// marshalMapKey encodes a map key. A plain string key is encoded by
-// appendKeyString with the same bytes as sonic.MarshalString, without
-// taking sonic's pooled encoder; other keys go through sonic as before.
+// marshalMapKey encodes a map key with the bytes einojson.MarshalString
+// writes: a plain string key is quoted by jsontext.AppendQuote without the
+// reflection of a full marshal (invalid UTF-8 becomes U+FFFD, as
+// einojson writes it); other keys go through einojson.
 func marshalMapKey(k any) (string, error) {
 	if str, ok := k.(string); ok {
-		return string(appendKeyString(make([]byte, 0, len(str)+2), str)), nil
+		b, _ := jsontext.AppendQuote(make([]byte, 0, len(str)+2), str)
+		return string(b), nil
 	}
-	return sonic.MarshalString(k)
-}
-
-// appendKeyString appends str as a JSON string the way sonic's default
-// configuration does: '"', '\\' and control characters are escaped (\t,
-// \n and \r by name, the others as \u00XX); everything else, including
-// '<', '>', '&', U+2028, U+2029 and invalid UTF-8, is copied as is.
-func appendKeyString(dst []byte, str string) []byte {
-	const hex = "0123456789abcdef"
-	dst = append(dst, '"')
-	for i := 0; i < len(str); i++ {
-		c := str[i]
-		switch {
-		case c == '"' || c == '\\':
-			dst = append(dst, '\\', c)
-		case c == '\t':
-			dst = append(dst, '\\', 't')
-		case c == '\n':
-			dst = append(dst, '\\', 'n')
-		case c == '\r':
-			dst = append(dst, '\\', 'r')
-		case c < 0x20:
-			dst = append(dst, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
-		default:
-			dst = append(dst, c)
-		}
-	}
-	return append(dst, '"')
+	return einojson.MarshalString(k)
 }
 
 // unmarshalLeaf decodes the JSON of one leaf value or map key. Leaves and map
-// keys are small documents; encoding/json decodes them at a cost proportional
-// to the leaf, while sonic's decoder takes a pooled parser with fixed
-// megabyte buffers that is allocated again after every garbage collection
-// empties the pool. On valid UTF-8 both decoders give the same value. sonic
-// keeps invalid UTF-8 as is where encoding/json replaces it with U+FFFD, so
-// such input still goes through sonic.
+// keys are small documents, decoded at a cost proportional to the leaf.
 func unmarshalLeaf(data []byte, v any) error {
-	if utf8.Valid(data) {
-		return json.Unmarshal(data, v)
-	}
-	return sonic.Unmarshal(data, v)
+	return json.Unmarshal(data, v)
 }
 
 func internalUnmarshal(v *internalStruct, typ reflect.Type) (any, error) {

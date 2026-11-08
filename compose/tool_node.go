@@ -27,7 +27,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -448,7 +448,7 @@ func remapArgs(args string, aliasMap map[string]string) (string, error) {
 	}
 
 	var m map[string]json.RawMessage
-	if err := sonic.Unmarshal([]byte(args), &m); err != nil {
+	if err := einojson.Unmarshal([]byte(args), &m); err != nil {
 		return args, nil
 	}
 
@@ -470,7 +470,7 @@ func remapArgs(args string, aliasMap map[string]string) (string, error) {
 		return args, nil
 	}
 
-	b, err := sonic.Marshal(m)
+	b, err := einojson.Marshal(m)
 	return string(b), err
 }
 

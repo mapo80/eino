@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -188,7 +188,7 @@ func (i *invokableTool[T, D]) InvokableRun(ctx context.Context, arguments string
 	} else {
 		inst = generic.NewInstance[T]()
 
-		err = sonic.UnmarshalString(arguments, &inst)
+		err = einojson.UnmarshalString(arguments, &inst)
 		if err != nil {
 			return "", fmt.Errorf("[LocalFunc] failed to unmarshal arguments in json, toolName=%s, err=%w", i.getToolName(), err)
 		}
@@ -291,7 +291,7 @@ func (e *enhancedInvokableTool[T]) InvokableRun(ctx context.Context, toolArgumen
 	} else {
 		inst = generic.NewInstance[T]()
 
-		err = sonic.UnmarshalString(toolArgument.Text, &inst)
+		err = einojson.UnmarshalString(toolArgument.Text, &inst)
 		if err != nil {
 			return nil, fmt.Errorf("[EnhancedLocalFunc] failed to unmarshal arguments in json, toolName=%s, err=%w", e.getToolName(), err)
 		}

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 )
 
 // MessageParser parses a Message into a strongly typed value.
@@ -107,23 +107,12 @@ func (p *MessageJSONParser[T]) extractData(data string) (string, error) {
 		return data, nil
 	}
 
-	keys := strings.Split(p.ParseKeyPath, ".")
-	interfaceKeys := make([]any, len(keys))
-	for i, key := range keys {
-		interfaceKeys[i] = key
-	}
-
-	node, err := sonic.GetFromString(data, interfaceKeys...)
+	value, err := einojson.ValueAt(data, strings.Split(p.ParseKeyPath, "."))
 	if err != nil {
 		return "", fmt.Errorf("failed to get parse key path: %w", err)
 	}
 
-	bytes, err := node.MarshalJSON()
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal node: %w", err)
-	}
-
-	return string(bytes), nil
+	return string(value), nil
 }
 
 // parse parses a string into an object T.
@@ -133,7 +122,7 @@ func (p *MessageJSONParser[T]) parse(data string) (parsed T, err error) {
 		return parsed, err
 	}
 
-	if err := sonic.UnmarshalString(parsedData, &parsed); err != nil {
+	if err := einojson.UnmarshalString(parsedData, &parsed); err != nil {
 		return parsed, fmt.Errorf("failed to unmarshal content: %w", err)
 	}
 

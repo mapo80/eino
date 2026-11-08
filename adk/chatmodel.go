@@ -28,7 +28,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk/internal"
 	"github.com/cloudwego/eino/components/model"
@@ -625,7 +625,7 @@ func (et ExitTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ .
 	}
 
 	params := &exitParams{}
-	err := sonic.UnmarshalString(argumentsInJSON, params)
+	err := einojson.UnmarshalString(argumentsInJSON, params)
 	if err != nil {
 		return "", err
 	}
@@ -664,7 +664,7 @@ func (tta transferToAgent) InvokableRun(ctx context.Context, argumentsInJSON str
 	}
 
 	params := &transferParams{}
-	err := sonic.UnmarshalString(argumentsInJSON, params)
+	err := einojson.UnmarshalString(argumentsInJSON, params)
 	if err != nil {
 		return "", err
 	}

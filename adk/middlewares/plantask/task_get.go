@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk/internal"
 	"github.com/cloudwego/eino/components/tool"
@@ -68,7 +68,7 @@ func (t *taskGetTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	defer t.lock.Unlock()
 
 	params := &taskGetArgs{}
-	err := sonic.UnmarshalString(argumentsInJSON, params)
+	err := einojson.UnmarshalString(argumentsInJSON, params)
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +88,7 @@ func (t *taskGetTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	}
 
 	taskData := &task{}
-	err = sonic.UnmarshalString(content.Content, taskData)
+	err = einojson.UnmarshalString(content.Content, taskData)
 	if err != nil {
 		return "", fmt.Errorf("%s get Task #%s failed, err: %w", TaskGetToolName, params.TaskID, err)
 	}
@@ -120,7 +120,7 @@ func (t *taskGetTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 		Result: result.String(),
 	}
 
-	jsonResp, err := sonic.MarshalString(resp)
+	jsonResp, err := einojson.MarshalString(resp)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskGetToolName, err)
 	}

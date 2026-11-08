@@ -17,12 +17,12 @@
 package utils
 
 import (
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 )
 
 func marshalString(resp any) (string, error) {
 	if rs, ok := resp.(string); ok {
 		return rs, nil
 	}
-	return sonic.MarshalString(resp)
+	return einojson.MarshalString(resp)
 }

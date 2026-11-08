@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/internal/generic"
@@ -114,7 +114,7 @@ func (s *streamableTool[T, D]) StreamableRun(ctx context.Context, argumentsInJSO
 
 		inst = generic.NewInstance[T]()
 
-		err = sonic.UnmarshalString(argumentsInJSON, &inst)
+		err = einojson.UnmarshalString(argumentsInJSON, &inst)
 		if err != nil {
 			return nil, fmt.Errorf("[LocalStreamFunc] failed to unmarshal arguments in json, toolName=%s, err=%w", s.getToolName(), err)
 		}
@@ -237,7 +237,7 @@ func (s *enhancedStreamableTool[T]) StreamableRun(ctx context.Context, toolArgum
 	} else {
 		inst = generic.NewInstance[T]()
 
-		err = sonic.UnmarshalString(toolArgument.Text, &inst)
+		err = einojson.UnmarshalString(toolArgument.Text, &inst)
 		if err != nil {
 			return nil, fmt.Errorf("[EnhancedLocalStreamFunc] failed to unmarshal arguments in json, toolName=%s, err=%w", s.getToolName(), err)
 		}

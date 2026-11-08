@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk/internal"
 	"github.com/cloudwego/eino/components/tool"
@@ -124,7 +124,7 @@ func (t *taskUpdateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	defer t.lock.Unlock()
 
 	params := &taskUpdateArgs{}
-	err := sonic.UnmarshalString(argumentsInJSON, params)
+	err := einojson.UnmarshalString(argumentsInJSON, params)
 	if err != nil {
 		return "", err
 	}
@@ -151,7 +151,7 @@ func (t *taskUpdateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		resp := &taskOut{
 			Result: fmt.Sprintf("Updated task #%s deleted", params.TaskID),
 		}
-		jsonResp, marshalErr := sonic.MarshalString(resp)
+		jsonResp, marshalErr := einojson.MarshalString(resp)
 		if marshalErr != nil {
 			return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskUpdateToolName, marshalErr)
 		}
@@ -166,7 +166,7 @@ func (t *taskUpdateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 
 	taskData := &task{}
-	err = sonic.UnmarshalString(content.Content, taskData)
+	err = einojson.UnmarshalString(content.Content, taskData)
 	if err != nil {
 		return "", fmt.Errorf("%s parse Task #%s failed, err: %w", TaskUpdateToolName, params.TaskID, err)
 	}
@@ -252,7 +252,7 @@ func (t *taskUpdateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		updatedFields = append(updatedFields, "metadata")
 	}
 
-	updatedContent, err := sonic.MarshalString(taskData)
+	updatedContent, err := einojson.MarshalString(taskData)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal Task #%s failed, err: %w", TaskUpdateToolName, params.TaskID, err)
 	}
@@ -275,7 +275,7 @@ func (t *taskUpdateTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 		Result: fmt.Sprintf("Updated task #%s %s", params.TaskID, strings.Join(updatedFields, ", ")),
 	}
 
-	jsonResp, err := sonic.MarshalString(resp)
+	jsonResp, err := einojson.MarshalString(resp)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskUpdateToolName, err)
 	}
@@ -317,7 +317,7 @@ func (t *taskUpdateTool) removeTaskFromDependencies(ctx context.Context, deleted
 			taskData.Blocks = newBlocks
 			taskData.BlockedBy = newBlockedBy
 
-			updatedContent, err := sonic.MarshalString(taskData)
+			updatedContent, err := einojson.MarshalString(taskData)
 			if err != nil {
 				return fmt.Errorf("failed to marshal task #%s: %w", taskData.ID, err)
 			}
@@ -341,13 +341,13 @@ func (t *taskUpdateTool) addBlockedByToTask(ctx context.Context, targetTaskID, b
 	}
 
 	targetTask := &task{}
-	if unmarshalErr := sonic.UnmarshalString(content.Content, targetTask); unmarshalErr != nil {
+	if unmarshalErr := einojson.UnmarshalString(content.Content, targetTask); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse task #%s: %w", targetTaskID, unmarshalErr)
 	}
 
 	targetTask.BlockedBy = appendUnique(targetTask.BlockedBy, blockerTaskID)
 
-	updatedContent, err := sonic.MarshalString(targetTask)
+	updatedContent, err := einojson.MarshalString(targetTask)
 	if err != nil {
 		return fmt.Errorf("failed to marshal task #%s: %w", targetTaskID, err)
 	}
@@ -368,13 +368,13 @@ func (t *taskUpdateTool) addBlocksToTask(ctx context.Context, targetTaskID, bloc
 	}
 
 	targetTask := &task{}
-	if unmarshalErr := sonic.UnmarshalString(content.Content, targetTask); unmarshalErr != nil {
+	if unmarshalErr := einojson.UnmarshalString(content.Content, targetTask); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse task #%s: %w", targetTaskID, unmarshalErr)
 	}
 
 	targetTask.Blocks = appendUnique(targetTask.Blocks, blockedTaskID)
 
-	updatedContent, err := sonic.MarshalString(targetTask)
+	updatedContent, err := einojson.MarshalString(targetTask)
 	if err != nil {
 		return fmt.Errorf("failed to marshal task #%s: %w", targetTaskID, err)
 	}

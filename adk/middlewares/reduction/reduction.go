@@ -25,7 +25,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 	"github.com/google/uuid"
 	"github.com/slongfield/pyfmt"
 
@@ -401,7 +401,7 @@ func defaultAgenticTokenCounter(_ context.Context, msgs []*schema.AgenticMessage
 	for _, tl := range tools {
 		tl_ := *tl
 		tl_.Extra = nil
-		text, err := sonic.MarshalString(tl_)
+		text, err := einojson.MarshalString(tl_)
 		if err != nil {
 			return 0, fmt.Errorf("failed to marshal tool info: %w", err)
 		}
@@ -1666,7 +1666,7 @@ func defaultTokenCounter(_ context.Context, msgs []*schema.Message, tools []*sch
 	for _, tl := range tools {
 		tl_ := *tl
 		tl_.Extra = nil
-		text, err := sonic.MarshalString(tl_)
+		text, err := einojson.MarshalString(tl_)
 		if err != nil {
 			return 0, fmt.Errorf("failed to marshal tool info: %w", err)
 		}

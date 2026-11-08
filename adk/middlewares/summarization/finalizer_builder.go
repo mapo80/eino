@@ -22,7 +22,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -258,7 +258,7 @@ func extractSkillInfos[M adk.MessageType](messages []M, skillTool string) ([]*sk
 				var arg struct {
 					Skill string `json:"skill"`
 				}
-				if err := sonic.UnmarshalString(arguments, &arg); err != nil {
+				if err := einojson.UnmarshalString(arguments, &arg); err != nil {
 					return nil, fmt.Errorf("failed to parse skill arguments from tool call %s: %w", m.ToolCallID, err)
 				}
 				skills = append(skills, &skillInfo{
@@ -285,7 +285,7 @@ func extractSkillInfos[M adk.MessageType](messages []M, skillTool string) ([]*sk
 					var arg struct {
 						Skill string `json:"skill"`
 					}
-					if err := sonic.UnmarshalString(arguments, &arg); err != nil {
+					if err := einojson.UnmarshalString(arguments, &arg); err != nil {
 						return nil, fmt.Errorf("failed to parse skill arguments from tool call %s: %w", block.FunctionToolResult.CallID, err)
 					}
 					var contentParts []string

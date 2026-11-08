@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/internal"
@@ -554,7 +554,7 @@ func (m *MCPListToolsItem) GobDecode(data []byte) error {
 	m.Description = g.Description
 	if len(g.InputSchemaJSON) > 0 {
 		m.InputSchema = &jsonschema.Schema{}
-		if err := sonic.Unmarshal(g.InputSchemaJSON, m.InputSchema); err != nil {
+		if err := einojson.Unmarshal(g.InputSchemaJSON, m.InputSchema); err != nil {
 			return fmt.Errorf("failed to unmarshal MCPListToolsItem.InputSchema: %w", err)
 		}
 	}

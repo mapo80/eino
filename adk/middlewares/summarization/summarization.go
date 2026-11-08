@@ -27,7 +27,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
@@ -444,7 +444,7 @@ func defaultTypedTokenCounter[M adk.MessageType](_ context.Context, input *Typed
 	for _, tl := range input.Tools {
 		tl_ := *tl
 		tl_.Extra = nil
-		text, err := sonic.MarshalString(tl_)
+		text, err := einojson.MarshalString(tl_)
 		if err != nil {
 			return 0, fmt.Errorf("failed to marshal tool info: %w", err)
 		}
@@ -1067,7 +1067,7 @@ func estimateMessageTokens(msg *schema.Message) int {
 					if part.ToolSearchResult != nil {
 						for _, tl := range part.ToolSearchResult.Tools {
 							totalLen += len(tl.Name) + len(tl.Desc)
-							if b, err := sonic.Marshal(tl.ParamsOneOf); err == nil {
+							if b, err := einojson.Marshal(tl.ParamsOneOf); err == nil {
 								totalLen += len(b)
 							}
 						}
@@ -1136,7 +1136,7 @@ func estimateAgenticMessageTokens(msg *schema.AgenticMessage) int {
 				if block.ToolSearchFunctionToolResult != nil && block.ToolSearchFunctionToolResult.Result != nil {
 					for _, tl := range block.ToolSearchFunctionToolResult.Result.Tools {
 						totalLen += len(tl.Name) + len(tl.Desc)
-						if b, err := sonic.Marshal(tl.ParamsOneOf); err == nil {
+						if b, err := einojson.Marshal(tl.ParamsOneOf); err == nil {
 							totalLen += len(b)
 						}
 					}

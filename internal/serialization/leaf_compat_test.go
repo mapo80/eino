@@ -21,9 +21,13 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/bytedance/sonic"
+
+	"github.com/cloudwego/eino/internal/einojson"
 )
 
 func leafCompatStrings() []string {
@@ -48,11 +52,14 @@ func leafCompatStrings() []string {
 	return out
 }
 
-// A plain string map key is encoded with the bytes sonic.MarshalString
-// writes, so checkpoints keep the same bytes.
-func TestMapKeyEncodingEqualsSonic(t *testing.T) {
+// A map key is encoded with the bytes einojson.MarshalString writes. Against
+// sonic, which wrote checkpoints before: the same bytes for every key
+// without invalid UTF-8, backspace or form feed; for those, sonic wrote the
+// invalid bytes as they are and \u0008 \u000c, einojson writes U+FFFD, \b
+// and \f. Either way the key reads back as the same key.
+func TestMapKeyEncodingEqualsEinojsonAndReadsAsSonic(t *testing.T) {
 	for _, s := range leafCompatStrings() {
-		want, err := sonic.MarshalString(s)
+		want, err := einojson.MarshalString(s)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -61,7 +68,18 @@ func TestMapKeyEncodingEqualsSonic(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got != want {
-			t.Fatalf("key %q: got %q, sonic %q", s, got, want)
+			t.Fatalf("key %q: got %q, einojson %q", s, got, want)
+		}
+		old, err := sonic.MarshalString(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if utf8.ValidString(s) && !strings.ContainsAny(s, "\b\f") && got != old {
+			t.Fatalf("key %q: got %q, sonic %q", s, got, old)
+		}
+		var readNew, readOld string
+		if unmarshalLeaf([]byte(got), &readNew) != nil || unmarshalLeaf([]byte(old), &readOld) != nil || readNew != readOld {
+			t.Fatalf("key %q: reads back as %q, sonic's bytes as %q", s, readNew, readOld)
 		}
 	}
 	for _, k := range []any{1.5, 1e21, 1e-7, math.MaxFloat64, 5e-324, -0.0, 7, int64(math.MaxInt64), uint64(math.MaxUint64), true} {
@@ -83,8 +101,8 @@ type leafCompatStruct struct {
 }
 
 // Leaves decode to the value sonic decodes, from the JSON encoding/json
-// writes for leaves and from the JSON sonic writes for map keys, invalid
-// UTF-8 included.
+// writes for leaves and from the JSON sonic wrote for map keys, except that
+// invalid UTF-8, which sonic kept as it is, reads as U+FFFD.
 func TestLeafDecodingEqualsSonic(t *testing.T) {
 	var docs [][]byte
 	for _, s := range leafCompatStrings() {
@@ -110,7 +128,7 @@ func TestLeafDecodingEqualsSonic(t *testing.T) {
 			if (wantErr == nil) != (gotErr == nil) {
 				t.Fatalf("%s into %v: error %v, sonic error %v", d, typ, gotErr, wantErr)
 			}
-			if wantErr == nil && !reflect.DeepEqual(got.Elem().Interface(), want.Elem().Interface()) {
+			if wantErr == nil && utf8.Valid(d) && !reflect.DeepEqual(got.Elem().Interface(), want.Elem().Interface()) {
 				t.Fatalf("%s into %v: got %#v, sonic %#v", d, typ, got.Elem().Interface(), want.Elem().Interface())
 			}
 		}

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/adk/internal"
 	"github.com/cloudwego/eino/components/tool"
@@ -82,7 +82,7 @@ func listTasks(ctx context.Context, backend Backend, baseDir string) ([]*task, e
 		}
 
 		taskData := &task{}
-		err = sonic.UnmarshalString(content.Content, taskData)
+		err = einojson.UnmarshalString(content.Content, taskData)
 		if err != nil {
 			return nil, fmt.Errorf("%s parse task file %s failed, err: %w", TaskListToolName, file.Path, err)
 		}
@@ -111,7 +111,7 @@ func (t *taskListTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		resp := &taskOut{
 			Result: "No tasks found.",
 		}
-		jsonResp, marshalErr := sonic.MarshalString(resp)
+		jsonResp, marshalErr := einojson.MarshalString(resp)
 		if marshalErr != nil {
 			return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskListToolName, marshalErr)
 		}
@@ -140,7 +140,7 @@ func (t *taskListTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		Result: result.String(),
 	}
 
-	jsonResp, err := sonic.MarshalString(resp)
+	jsonResp, err := einojson.MarshalString(resp)
 	if err != nil {
 		return "", fmt.Errorf("%s marshal taskOut failed, err: %w", TaskListToolName, err)
 	}

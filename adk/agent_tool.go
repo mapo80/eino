@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/internal/einojson"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
@@ -184,7 +184,7 @@ func (at *typedAgentTool[M]) InvokableRun(ctx context.Context, argumentsInJSON s
 		} else {
 			if at.inputSchema == nil {
 				req := &agentToolRequest{}
-				err = sonic.UnmarshalString(argumentsInJSON, req)
+				err = einojson.UnmarshalString(argumentsInJSON, req)
 				if err != nil {
 					return "", err
 				}
