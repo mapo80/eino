@@ -27,6 +27,7 @@ import (
 	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 // Options are the options every eino read and write uses.
@@ -36,15 +37,46 @@ var Options = jsonv2.JoinOptions(
 	jsontext.EscapeForJS(false),
 )
 
+// encoder writes into buf directly (jsontext appends to a bytes.Buffer
+// without an intermediate buffer); both are reused across calls, so a
+// large document does not grow a new buffer every time.
+type encoder struct {
+	buf bytes.Buffer
+	enc jsontext.Encoder
+}
+
+var encoders = sync.Pool{New: func() any { return new(encoder) }}
+
+// maxPooledBuffer is the largest buffer kept for reuse.
+const maxPooledBuffer = 4 << 20
+
+// encode writes v and passes the bytes (valid until it returns) to use.
+func encode(v any, use func([]byte)) error {
+	e := encoders.Get().(*encoder)
+	e.buf.Reset()
+	e.enc.Reset(&e.buf, Options)
+	err := jsonv2.MarshalEncode(&e.enc, v)
+	if err == nil {
+		// The encoder ends a top-level value with a newline.
+		use(bytes.TrimSuffix(e.buf.Bytes(), []byte{'\n'}))
+	}
+	e.enc.Reset(&bytes.Buffer{})
+	if e.buf.Cap() <= maxPooledBuffer {
+		encoders.Put(e)
+	}
+	return err
+}
+
 // Marshal writes v.
-func Marshal(v any) ([]byte, error) {
-	return jsonv2.Marshal(v, Options)
+func Marshal(v any) (out []byte, err error) {
+	err = encode(v, func(b []byte) { out = bytes.Clone(b) })
+	return out, err
 }
 
 // MarshalString writes v as a string.
-func MarshalString(v any) (string, error) {
-	b, err := jsonv2.Marshal(v, Options)
-	return string(b), err
+func MarshalString(v any) (out string, err error) {
+	err = encode(v, func(b []byte) { out = string(b) })
+	return out, err
 }
 
 // Unmarshal reads data into v.
