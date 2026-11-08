@@ -92,4 +92,22 @@ go1.27.1, n=8, machine shared with other loads, times indicative):
 | marshal | 332 µs, 211 KiB, 2 328 allocs | 246 µs, 176 KiB, 2 204 allocs |
 | unmarshal | 372 µs, 317 KiB, 3 477 allocs | 574 µs (±11 %), 182 KiB, 3 338 allocs |
 
+## Branch `arc/empty-channels`, tag `v0.9.22-arc.2` — channels as built stay out of checkpoints
+
+Base: `arc/json-v2` at `faf4e1d8` (`v0.9.22-arc.1`).
+
+13. **perf(compose): leave channels still as built out of checkpoints** (`ec19f57d`) — a
+    checkpoint wrote every channel of the run, empty ones included: ARC's Callistos
+    workflow (437 nodes) wrote 437 empty pregel channels, 41 KB, at every checkpoint and
+    read them back at every resume. A checkpoint now names only the channels that left
+    the state their builder creates (a value received, a dependency reported, a skip);
+    `loadChannels` already leaves an unnamed channel as built, so the restored channels
+    are the same, and a checkpoint naming every channel (written before) reads back as
+    before. Tests: `TestCheckpointChannelsRestoreAsEveryChannel` (pregel and DAG channels
+    restored from the smaller checkpoint equal those restored from every channel),
+    `TestCheckpointOmitsChannelsAsBuilt` (50-node graph paused at `n3`: no channel of
+    `n5`..`n49` in the bytes, same result after resume). Upstream suite green;
+    `TestDeepCopyStateAllocatesLessThanByteRoundTrip` is an allocation ratio that varies
+    with the buffer pool between runs on the base too (byte round trip 9.3 or 16.7 MB).
+
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
