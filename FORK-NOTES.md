@@ -110,4 +110,22 @@ Base: `arc/json-v2` at `faf4e1d8` (`v0.9.22-arc.1`).
     `TestDeepCopyStateAllocatesLessThanByteRoundTrip` is an allocation ratio that varies
     with the buffer pool between runs on the base too (byte round trip 9.3 or 16.7 MB).
 
+## Branch `arc/state-direct`, tag `v0.9.22-arc.3` — the live state serialized at an interrupt
+
+Base: `arc/empty-channels` at `abdff2f4` (`v0.9.22-arc.2`).
+
+14. **perf(compose): serialize the live state at a synchronous interrupt instead of a
+    copy** (`4da8ec2e`) — at an interrupt the graph deep-copied its state (a tree and
+    back) and then serialized the checkpoint carrying the copy. When the graph serializes
+    the checkpoint itself (not a subgraph, not a stream), the checkpoint carries the live
+    state and `checkPointer.setHolding` holds the state's lock while it serializes,
+    releasing it before the store writes. `InterruptInfo.State` is then the run's state
+    itself, which the finished run no longer changes. Tests:
+    `TestCheckpointOfTheLiveStateIsTheCheckpointOfItsCopy`,
+    `TestInterruptCheckpointCarriesTheLiveState`, `TestSetHoldingLocksOnlyTheSerialization`,
+    `TestNoOneChangesTheStateWhileItIsSerialized` (-race reports the race without the lock).
+    ARC Callistos spa-conferma: 36.11/48.02/32.69 -> 35.53/47.88/32.76 MB per turn.
+    Upstream suite green; `TestDeepCopyStateAllocatesLessThanByteRoundTrip` varies between
+    runs as on the base.
+
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).
