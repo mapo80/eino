@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/cloudwego/eino/internal/core"
 	"github.com/cloudwego/eino/internal/serialization"
@@ -279,10 +280,23 @@ var unmarshalCheckpointBytes = func(serializer Serializer, data []byte, cp *chec
 }
 
 func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error {
+	return c.setHolding(ctx, id, cp, nil)
+}
+
+// setHolding is set with held locked while the checkpoint is serialized,
+// not while the store writes it: a checkpoint that carries the graph's
+// live state (not a copy) is serialized while no one can change it.
+func (c *checkPointer) setHolding(ctx context.Context, id string, cp *checkpoint, held sync.Locker) error {
 	normalizeCheckpointTypedNilInputs(cp)
+	lock, unlock := func() {}, func() {}
+	if held != nil {
+		lock, unlock = held.Lock, held.Unlock
+	}
 
 	if ts, is, ok := c.treeStore(); ok {
+		lock()
 		tree, err := is.MarshalTree(cp)
+		unlock()
 		if err != nil {
 			return err
 		}
@@ -290,7 +304,9 @@ func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error
 	}
 
 	if is, ok := c.serializer.(*serialization.InternalSerializer); ok {
+		lock()
 		data, parsed, err := is.MarshalParsed(cp)
+		unlock()
 		if err != nil {
 			return err
 		}
@@ -304,7 +320,9 @@ func (c *checkPointer) set(ctx context.Context, id string, cp *checkpoint) error
 		return nil
 	}
 
+	lock()
 	data, err := c.serializer.Marshal(cp)
+	unlock()
 	if err != nil {
 		return err
 	}

@@ -581,16 +581,16 @@ func (r *runner) handleInterrupt(
 		Inputs:         make(map[string]any),
 		SkipPreHandler: map[string]bool{},
 	}
+	// A checkpoint serialized here, synchronously, carries the live state,
+	// serialized under its lock; one handed to the parent graph carries a
+	// copy.
+	direct := !isSubGraph && checkPointID != nil && !isStream
+	var held sync.Locker
 	if r.runCtx != nil {
 		// current graph has enable state
-		if state, ok := ctx.Value(stateKey{}).(*internalState); ok {
-			state.mu.Lock()
-			copiedState, err := deepCopyState(state.state)
-			state.mu.Unlock()
-			if err != nil {
-				return fmt.Errorf("failed to copy state: %w", err)
-			}
-			cp.State = copiedState
+		var err error
+		if cp.State, held, err = interruptState(ctx, direct); err != nil {
+			return err
 		}
 	}
 
@@ -630,7 +630,7 @@ func (r *runner) handleInterrupt(
 		}
 		return subGraphInterrupt
 	} else if checkPointID != nil {
-		err := r.checkPointer.set(ctx, *checkPointID, cp)
+		err := r.checkPointer.setHolding(ctx, *checkPointID, cp, held)
 		if err != nil {
 			return fmt.Errorf("failed to set checkpoint: %w, checkPointID: %s", err, *checkPointID)
 		}
@@ -638,6 +638,30 @@ func (r *runner) handleInterrupt(
 
 	intInfo.InterruptContexts = core.ToInterruptContexts(is, nil)
 	return &interruptError{Info: intInfo}
+}
+
+// interruptState is the state an interrupt's checkpoint carries. direct:
+// the checkpoint is serialized synchronously by this graph (not handed to
+// a parent, no stream left to read into it), so it carries the live state
+// and held, the state's lock, which setHolding takes while it serializes;
+// nothing between here and that serialization changes the state. Else a
+// deep copy taken under the lock (perf 09/11, ARC: the copy cost a second
+// serialization of the state at every interrupt).
+func interruptState(ctx context.Context, direct bool) (any, sync.Locker, error) {
+	state, ok := ctx.Value(stateKey{}).(*internalState)
+	if !ok {
+		return nil, nil, nil
+	}
+	if direct {
+		return state.state, &state.mu, nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	copied, err := deepCopyState(state.state)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to copy state: %w", err)
+	}
+	return copied, nil, nil
 }
 
 // deepCopyState creates a deep copy of the state using serialization.
@@ -731,16 +755,16 @@ func (r *runner) handleInterruptWithSubGraphAndRerunNodes(
 		SkipPreHandler: skipPreHandler,
 		SubGraphs:      make(map[string]*checkpoint),
 	}
+	// A checkpoint serialized here, synchronously, carries the live state,
+	// serialized under its lock; one handed to the parent graph carries a
+	// copy.
+	direct := !isSubGraph && checkPointID != nil && !isStream
+	var held sync.Locker
 	if r.runCtx != nil {
 		// current graph has enable state
-		if state, ok := ctx.Value(stateKey{}).(*internalState); ok {
-			state.mu.Lock()
-			copiedState, err_ := deepCopyState(state.state)
-			state.mu.Unlock()
-			if err_ != nil {
-				return fmt.Errorf("failed to copy state: %w", err_)
-			}
-			cp.State = copiedState
+		var err_ error
+		if cp.State, held, err_ = interruptState(ctx, direct); err_ != nil {
+			return err_
 		}
 	}
 
@@ -791,7 +815,7 @@ func (r *runner) handleInterruptWithSubGraphAndRerunNodes(
 		}
 		return subGraphInterrupt
 	} else if checkPointID != nil {
-		err = r.checkPointer.set(ctx, *checkPointID, cp)
+		err = r.checkPointer.setHolding(ctx, *checkPointID, cp, held)
 		if err != nil {
 			return fmt.Errorf("failed to set checkpoint: %w, checkPointID: %s", err, *checkPointID)
 		}
