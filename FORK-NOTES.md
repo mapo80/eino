@@ -128,7 +128,7 @@ Base: `arc/empty-channels` at `abdff2f4` (`v0.9.22-arc.2`).
     Upstream suite green; `TestDeepCopyStateAllocatesLessThanByteRoundTrip` varies between
     runs as on the base.
 
-## Branch `arc/memo-owner`, tag `v0.9.22-arc.4` — the checkpoint memo knows its stores' owners
+## Branch `arc/memo-owner`, tag `v0.9.22-arc.5` — the checkpoint memo knows its stores' owners
 
 Base: `arc/state-direct` at `11846603` (`v0.9.22-arc.3`).
 
@@ -137,10 +137,16 @@ Base: `arc/state-direct` at `11846603` (`v0.9.22-arc.3`).
     of a store whose owner went away (ARC: the database of a runtime that closes) stayed
     in it until other checkpoints evicted them: about 7.5 MB in a process that had opened
     and closed 40 ARC runtimes. A `CheckPointStore` may implement `CheckPointOwner`
-    (`CheckPointOwner() any`, a comparable owner): its checkpoints are kept under that
-    owner, and `ForgetCheckPointOwner(owner)` drops them. A store without it shares the
-    memo under no owner, as before; the same id under two owners are two checkpoints.
-    Test: `TestForgetCheckPointOwnerDropsOnlyThatOwner` (fails without the drop).
+    (`CheckPointOwner(ctx) any`, a comparable owner): its checkpoints are kept under that
+    owner, and `ForgetCheckPointOwner(owner)` drops them. A store without it, or a nil
+    owner, shares the memo as before; the same id under two owners are two checkpoints.
+    Tests: `TestForgetCheckPointOwnerDropsOnlyThatOwner`,
+    `TestForgetCheckPointOwnerOfAStoreChosenByTheContext` (both fail without the drop).
     Upstream suite green.
+
+    `v0.9.22-arc.4` (`4434ee77`) asked the owner without the context. A compiled graph
+    reused across runs has one store that picks the run's store from the context of each
+    call (ARC's reusable plans), so it could not name the owner: `v0.9.22-arc.5`
+    (`CheckPointOwner(ctx)`) replaces it. ARC never pinned `v0.9.22-arc.4`.
 
 Licensed under Apache 2.0 like the upstream project (`LICENSE-APACHE`).

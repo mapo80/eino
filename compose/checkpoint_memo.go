@@ -2,6 +2,7 @@ package compose
 
 import (
 	"container/list"
+	"context"
 	"crypto/sha256"
 	"sync"
 
@@ -26,10 +27,13 @@ var checkpointMemos = newCheckpointMemo(checkpointMemoBudget)
 // CheckPointOwner is implemented by a CheckPointStore whose checkpoints
 // belong to an owner that can go away (a database of a runtime that
 // closes): the memo keeps that store's checkpoints under the owner, and
-// ForgetCheckPointOwner drops them. The owner must be comparable. A store
-// without it shares the memo under no owner, as before.
+// ForgetCheckPointOwner drops them. The owner is asked with the context of
+// each read and write, so a store that picks the actual store from the
+// context (one compiled graph serving many runs) names the owner of that
+// call. The owner must be comparable. A store without it, or a nil owner,
+// shares the memo under no owner, as before.
 type CheckPointOwner interface {
-	CheckPointOwner() any
+	CheckPointOwner(ctx context.Context) any
 }
 
 // ForgetCheckPointOwner drops what the memo keeps of the checkpoints
@@ -48,9 +52,9 @@ type checkpointMemoKey struct {
 	id    string
 }
 
-func checkpointOwnerOf(store CheckPointStore) any {
+func checkpointOwnerOf(ctx context.Context, store CheckPointStore) any {
 	if o, ok := store.(CheckPointOwner); ok {
-		return o.CheckPointOwner()
+		return o.CheckPointOwner(ctx)
 	}
 	return nil
 }

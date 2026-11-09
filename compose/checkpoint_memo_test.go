@@ -360,7 +360,50 @@ type ownedStore struct {
 	owner *int
 }
 
-func (s ownedStore) CheckPointOwner() any { return s.owner }
+func (s ownedStore) CheckPointOwner(context.Context) any { return s.owner }
+
+// contextStore picks the store of each call from the context, as one
+// compiled graph serving many runs does.
+type contextStore struct{}
+
+type contextStoreKey struct{}
+
+func (contextStore) of(ctx context.Context) ownedStore {
+	return ctx.Value(contextStoreKey{}).(ownedStore)
+}
+func (s contextStore) Get(ctx context.Context, id string) ([]byte, bool, error) {
+	return s.of(ctx).Get(ctx, id)
+}
+func (s contextStore) Set(ctx context.Context, id string, data []byte) error {
+	return s.of(ctx).Set(ctx, id, data)
+}
+func (s contextStore) CheckPointOwner(ctx context.Context) any { return s.of(ctx).owner }
+
+// The owner is the one of each call: one checkpointer over a store chosen
+// from the context keeps each run's checkpoints under that run's owner.
+func TestForgetCheckPointOwnerOfAStoreChosenByTheContext(t *testing.T) {
+	decodes := countByteDecodes(t)
+	a := ownedStore{newCopyingStore(), new(int)}
+	b := ownedStore{newCopyingStore(), new(int)}
+	ctxA := context.WithValue(context.Background(), contextStoreKey{}, a)
+	ctxB := context.WithValue(context.Background(), contextStoreKey{}, b)
+	cpr := newCheckPointer(nil, nil, contextStore{}, nil)
+	require.NoError(t, cpr.set(ctxA, "memo-context-owner", memoTestCheckpoint("a")))
+	require.NoError(t, cpr.set(ctxB, "memo-context-owner", memoTestCheckpoint("b")))
+
+	ForgetCheckPointOwner(a.owner)
+
+	got, ok, err := cpr.get(ctxA, "memo-context-owner")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, decodeStored(t, a, "memo-context-owner"), got)
+	assert.Equal(t, int64(1), atomic.LoadInt64(decodes), "the forgotten owner's checkpoint is decoded from its bytes")
+	got, ok, err = cpr.get(ctxB, "memo-context-owner")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, decodeStored(t, b, "memo-context-owner"), got)
+	assert.Equal(t, int64(1), atomic.LoadInt64(decodes), "the other owner's checkpoint is still served from the memo")
+}
 
 // ForgetCheckPointOwner drops the memo of one owner's checkpoints only: its
 // next read decodes the store's bytes, the other owner's is still served
