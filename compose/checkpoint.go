@@ -259,7 +259,7 @@ func (c *checkPointer) get(ctx context.Context, id string) (*checkpoint, bool, e
 
 	cp := &checkpoint{}
 	if is, ok := c.serializer.(*serialization.InternalSerializer); ok {
-		if parsed := checkpointMemos.lookup(id, data); parsed != nil {
+		if parsed := checkpointMemos.lookup(checkpointMemoKey{checkpointOwnerOf(c.store), id}, data); parsed != nil {
 			if err = is.UnmarshalParsed(parsed, cp); err != nil {
 				return nil, false, err
 			}
@@ -313,10 +313,10 @@ func (c *checkPointer) setHolding(ctx context.Context, id string, cp *checkpoint
 		// The digest is taken before the store sees the bytes.
 		sum := sha256.Sum256(data)
 		if err = c.store.Set(ctx, id, data); err != nil {
-			checkpointMemos.forget(id)
+			checkpointMemos.forget(checkpointMemoKey{checkpointOwnerOf(c.store), id})
 			return err
 		}
-		checkpointMemos.remember(id, sum, len(data), parsed)
+		checkpointMemos.remember(checkpointMemoKey{checkpointOwnerOf(c.store), id}, sum, len(data), parsed)
 		return nil
 	}
 

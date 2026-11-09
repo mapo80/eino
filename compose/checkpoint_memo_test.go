@@ -353,3 +353,38 @@ func TestCheckPointMemoInterruptResumeSameAsBytes(t *testing.T) {
 	assert.Equal(t, plainInfos, memoInfos)
 	assert.Equal(t, plainResult, memoResult)
 }
+
+// ownedStore is a copyingStore whose checkpoints belong to owner.
+type ownedStore struct {
+	*copyingStore
+	owner *int
+}
+
+func (s ownedStore) CheckPointOwner() any { return s.owner }
+
+// ForgetCheckPointOwner drops the memo of one owner's checkpoints only: its
+// next read decodes the store's bytes, the other owner's is still served
+// from the memo, and the same id under two owners are two checkpoints.
+func TestForgetCheckPointOwnerDropsOnlyThatOwner(t *testing.T) {
+	ctx := context.Background()
+	decodes := countByteDecodes(t)
+	a := ownedStore{newCopyingStore(), new(int)}
+	b := ownedStore{newCopyingStore(), new(int)}
+	ca, cb := newCheckPointer(nil, nil, a, nil), newCheckPointer(nil, nil, b, nil)
+	require.NoError(t, ca.set(ctx, "memo-owner", memoTestCheckpoint("a")))
+	require.NoError(t, cb.set(ctx, "memo-owner", memoTestCheckpoint("b")))
+
+	ForgetCheckPointOwner(a.owner)
+
+	got, ok, err := ca.get(ctx, "memo-owner")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, decodeStored(t, a, "memo-owner"), got)
+	assert.Equal(t, int64(1), atomic.LoadInt64(decodes), "the forgotten owner's checkpoint is decoded from its bytes")
+
+	got, ok, err = cb.get(ctx, "memo-owner")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, decodeStored(t, b, "memo-owner"), got)
+	assert.Equal(t, int64(1), atomic.LoadInt64(decodes), "the other owner's checkpoint is still served from the memo")
+}

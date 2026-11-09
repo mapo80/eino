@@ -23,28 +23,60 @@ const checkpointMemoBudget = 4 << 20
 // exactly as when the bytes are decoded.
 var checkpointMemos = newCheckpointMemo(checkpointMemoBudget)
 
+// CheckPointOwner is implemented by a CheckPointStore whose checkpoints
+// belong to an owner that can go away (a database of a runtime that
+// closes): the memo keeps that store's checkpoints under the owner, and
+// ForgetCheckPointOwner drops them. The owner must be comparable. A store
+// without it shares the memo under no owner, as before.
+type CheckPointOwner interface {
+	CheckPointOwner() any
+}
+
+// ForgetCheckPointOwner drops what the memo keeps of the checkpoints
+// written through the stores of owner. Without it they stay until other
+// checkpoints evict them.
+func ForgetCheckPointOwner(owner any) {
+	if owner == nil {
+		return
+	}
+	checkpointMemos.forgetOwner(owner)
+}
+
+// checkpointMemoKey is a checkpoint id within its store's owner.
+type checkpointMemoKey struct {
+	owner any
+	id    string
+}
+
+func checkpointOwnerOf(store CheckPointStore) any {
+	if o, ok := store.(CheckPointOwner); ok {
+		return o.CheckPointOwner()
+	}
+	return nil
+}
+
 type checkpointMemo struct {
 	mu      sync.Mutex
 	budget  int
 	size    int
 	order   *list.List // of *checkpointMemoEntry, most recently used first
-	entries map[string]*list.Element
+	entries map[checkpointMemoKey]*list.Element
 }
 
 type checkpointMemoEntry struct {
-	id     string
+	id     checkpointMemoKey
 	sum    [sha256.Size]byte
 	size   int
 	parsed *serialization.Parsed
 }
 
 func newCheckpointMemo(budget int) *checkpointMemo {
-	return &checkpointMemo{budget: budget, order: list.New(), entries: map[string]*list.Element{}}
+	return &checkpointMemo{budget: budget, order: list.New(), entries: map[checkpointMemoKey]*list.Element{}}
 }
 
 // remember records the parsed form of the bytes with the given digest just
 // written for id, replacing what was kept for id.
-func (m *checkpointMemo) remember(id string, sum [sha256.Size]byte, size int, parsed *serialization.Parsed) {
+func (m *checkpointMemo) remember(id checkpointMemoKey, sum [sha256.Size]byte, size int, parsed *serialization.Parsed) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.removeLocked(id)
@@ -59,15 +91,26 @@ func (m *checkpointMemo) remember(id string, sum [sha256.Size]byte, size int, pa
 }
 
 // forget drops what was kept for id.
-func (m *checkpointMemo) forget(id string) {
+func (m *checkpointMemo) forget(id checkpointMemoKey) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.removeLocked(id)
 }
 
+// forgetOwner drops what was kept for every checkpoint of owner.
+func (m *checkpointMemo) forgetOwner(owner any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id := range m.entries {
+		if id.owner == owner {
+			m.removeLocked(id)
+		}
+	}
+}
+
 // lookup returns the parsed form kept for id when data are the bytes it was
 // made from.
-func (m *checkpointMemo) lookup(id string, data []byte) *serialization.Parsed {
+func (m *checkpointMemo) lookup(id checkpointMemoKey, data []byte) *serialization.Parsed {
 	m.mu.Lock()
 	el, ok := m.entries[id]
 	var entry *checkpointMemoEntry
@@ -86,7 +129,7 @@ func (m *checkpointMemo) lookup(id string, data []byte) *serialization.Parsed {
 	return entry.parsed
 }
 
-func (m *checkpointMemo) removeLocked(id string) {
+func (m *checkpointMemo) removeLocked(id checkpointMemoKey) {
 	el, ok := m.entries[id]
 	if !ok {
 		return
